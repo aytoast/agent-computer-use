@@ -138,8 +138,10 @@ $localSettings = [ordered]@{
 }
 
 $settingsPath = Join-Path $rootDir 'config\settings.local.json'
-$localSettings | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
-Write-Host "Wrote $settingsPath"
+if ((-not (Test-Path -LiteralPath $settingsPath)) -or $CreateVm -or $VmId) {
+    $localSettings | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
+    Write-Host "Wrote $settingsPath"
+}
 
 $runtimeDir = Join-Path $rootDir 'runtime'
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
