@@ -392,6 +392,7 @@ class PipThumbnailWindow:
             win32con.SWP_NOACTIVATE | win32con.SWP_SHOWWINDOW,
         )
         self._apply_region(x, y, w, h)
+        self._update_props()
         win32gui.InvalidateRect(self.hwnd, None, False)
 
     def _set_collapsed(self, collapsed: bool):
@@ -494,7 +495,8 @@ class PipThumbnailWindow:
         if src_rect:
             props.dwFlags |= DWM_TNP_RECTSOURCE
             props.rcSource = wintypes.RECT(*src_rect)
-        props.opacity = self.opacity
+        dim_alpha = min(210, max(0, round(165 * (1.0 - self._anim_p))))
+        props.opacity = max(1, round(self.opacity * (1.0 - dim_alpha / 255.0)))
         props.fVisible = True
         props.fSourceClientAreaOnly = True
         dwmapi.DwmUpdateThumbnailProperties(self.thumb, ctypes.byref(props))
