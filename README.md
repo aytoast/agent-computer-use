@@ -8,6 +8,17 @@ You keep working on your host. Your agent works inside its own sandboxed VM, wit
 
 <!-- Drop demo GIF here once recorded: ![agent-computer-use demo](docs/media/demo.gif) -->
 
+## Architecture
+
+```mermaid
+flowchart LR
+    IDE["AI Agent / IDE (Claude, Cursor, Codex, VS Code)"] -->|"stdio MCP"| Host["computer-use Host Server (hyperv_acu)"]
+    Host -->|"DWM Thumbnail / Double-click Takeover"| PiP["Host PiP Notch (pip_thumbnail.py)"]
+    Host -->|"Named Pipe (Elevated)"| Broker["Admin Broker (VHDX Clone / Checkpoint)"]
+    Host -->|"HTTP + Bearer Token (MAC-locked IP)"| Guest["Agent VM (agent_server.py + SendInput)"]
+    Base["Base Image (win11-agent-base.vhdx)"] -->|"CoW Differencing VHDX"| Guest
+```
+
 ## Why not run on your host or a cloud VM?
 
 | | Host Desktop | Cloud Sandbox | **agent-computer-use** |
@@ -28,8 +39,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -InstallClients all
 
 `setup.ps1` registers `computer-use` in your detected IDEs (`claude-code`, `claude-desktop`, `cursor`, `codex`, `antigravity`, `vscode`). From there, your agent handles VM provisioning, cloning, checkpoints, and teardown via MCP tools.
 
-<details>
-<summary>Manual per-IDE MCP config</summary>
+### Manual per-IDE MCP config
 
 - **Claude Code**: `claude mcp add -s user computer-use -- python -B -u src/hyperv_acu/server.py`
 - **Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`), **Cursor** (`~/.cursor/mcp.json`), **Antigravity** (`~/.gemini/config/mcp_config.json`):
@@ -55,8 +65,6 @@ args = ["-B", "-u", "C:/path/to/agent-computer-use/src/hyperv_acu/server.py"]
 
 - **ChatGPT / Codex tunnel**: copy `.codex-plugin/tunnel.yaml.example` to `.codex-plugin/tunnel/hyperv.yaml` and run `scripts\connect-tunnel.ps1`.
 
-</details>
-
 ## What the agent gets
 
 All observation and input tools operate **desktop-wide by default** (with optional `target_id` for window-level scoping):
@@ -72,18 +80,26 @@ All observation and input tools operate **desktop-wide by default** (with option
 - **MAC-locked networking**: resolves each VM strictly by static virtual MAC over the private Hyper-V switch—no exposed ports.
 - **Human-takeover safe**: pauses/refuses agent input when you interact with the VM; double-click the host PiP thumbnail to jump straight into `vmconnect.exe`.
 
-<details>
-<summary>Project layout & tests</summary>
+## Project layout
 
 - `src/hyperv_acu/`: host MCP server, VM pool, guest proxy, safety guards, DWM PiP overlay
 - `guest/`: guest-side FastMCP server (`agent_server.py`) and Win32 capture/input modules
 - `skills/`: agent skills (`computer-use`, `sandbox-lifecycle`)
-- `config/`: `settings.json` defaults + `settings.example.json`
+- `config/`: `settings.json` defaults and `settings.example.json`
 - `scripts/`: `setup.ps1`, `install-mcp.ps1`, `provision-base.ps1`, `deploy-guest.ps1`, `admin-broker.ps1`
 - `.codex-plugin/`: Codex plugin manifest + `tunnel.yaml.example`
-- Run tests: `python -m unittest discover -s tests -t .`
+- `tests/`: unit tests (`python -m unittest discover -s tests -t .`)
 
-</details>
+## FAQ
+
+**How is this different from Playwright or browser-use MCP?**
+Browser tools only automate DOM/webpages. `agent-computer-use` controls an entire Windows OS—native desktop apps, installers, terminals, system dialogs, and browsers—inside an isolated VM.
+
+**Do I need cloud GPUs or external APIs to host the sandbox?**
+No. Everything runs locally on Windows Hyper-V using differencing VHDX images and local virtual networking.
+
+**Can I run multiple isolated Agent VMs at once?**
+Yes. `vm_pool.py` tracks multiple managed VMs (`ephemeral` or `persistent`) up to `max_managed_vms`, routes each tool call by `vm_id` and virtual MAC, and launches a dedicated host PiP thumbnail for each active VM.
 
 ## License
 
