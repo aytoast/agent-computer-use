@@ -57,6 +57,7 @@ class ToolNamingTest(unittest.TestCase):
 class NewToolsValidationTest(unittest.TestCase):
     def setUp(self):
         import hyperv_acu.app_policy as app_policy
+        server._clients.clear()
         self._p1 = patch.object(server, 'VM_ID', '00000000-0000-0000-0000-000000000001')
         self._p2 = patch.object(app_policy, 'VM_ID', '00000000-0000-0000-0000-000000000001')
         self._p1.start()

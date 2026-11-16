@@ -54,11 +54,16 @@ def connection(timeout:float=45,vm_id:str|None=None):
     return Client(StdioTransport(PYTHON,[PROXY],env=env),mode='2026-07-28',timeout=timeout)
 
 
+def _client_alive(client)->bool:
+    fn=getattr(client,'is_connected',None)
+    return bool(fn()) if callable(fn) else True
+
+
 @asynccontextmanager
 async def pooled_connection(timeout:float=45,vm_id:str|None=None):
     key=((vm_id or VM_ID or '').strip().lower(),float(timeout))
     client=_clients.get(key)
-    if client is None or not client.is_connected():
+    if client is None or not _client_alive(client):
         if client is not None:
             _clients.pop(key,None)
             try:await client.__aexit__(None,None,None)
@@ -70,7 +75,7 @@ async def pooled_connection(timeout:float=45,vm_id:str|None=None):
         yield client
     except Exception as exc:
         msg=str(exc).lower()
-        if not client.is_connected() or any(k in msg for k in ('closed','broken pipe','eof','connection','transport')):
+        if not _client_alive(client) or any(k in msg for k in ('closed','broken pipe','eof','connection','transport')):
             _clients.pop(key,None)
             try:await client.__aexit__(None,None,None)
             except Exception:pass

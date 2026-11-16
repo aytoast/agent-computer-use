@@ -1,5 +1,6 @@
 .env
 .mcp.json
+.vscode/
 config/settings.local.json
 __pycache__/
 *.pyc
