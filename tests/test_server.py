@@ -147,4 +147,32 @@ class NewToolsValidationTest(unittest.TestCase):
         self.assertEqual(res['completed'],0)
         self.assertEqual(res['results'][0]['reason'],'user_active')
 
+    def test_desktop_wide_screenshot_click_and_drag(self):
+        calls=[]
+        class FakeClient:
+            async def __aenter__(self):return self
+            async def __aexit__(self,*args):return False
+            async def call_tool(self,name,args):
+                calls.append((name,args))
+                if name=='AgentStatus':return SimpleNamespace(data={'paused':False,'task_active':True},content=[])
+                if name=='DesktopScreenshot':
+                    return SimpleNamespace(content=[
+                        SimpleNamespace(type='text',text=json.dumps({'target_id':'desktop','width':1920,'height':1080})),
+                        SimpleNamespace(type='image'),
+                    ])
+                return SimpleNamespace(content=[SimpleNamespace(type='text',text=json.dumps({'outcome':'delivered'}))])
+        with patch.object(server,'connection',return_value=FakeClient()), \
+             patch.object(server.input_guard,'require_clear'), \
+             patch.object(server.input_guard,'observed',return_value=None):
+            asyncio.run(server.screenshot(server.VM_ID))
+            asyncio.run(server.click(server.VM_ID,500,500,coordinate_space='normalized_1000'))
+            asyncio.run(server.screenshot(server.VM_ID))
+            asyncio.run(server.drag(server.VM_ID,10,20,300,400))
+        tool_names=[name for name,_ in calls]
+        self.assertEqual(tool_names.count('DesktopScreenshot'),2)
+        self.assertIn('DesktopClick',tool_names)
+        self.assertIn('DesktopDrag',tool_names)
+        click_args=next(args for name,args in calls if name=='DesktopClick')
+        self.assertEqual(click_args['point'],[960,540])
+
 if __name__=='__main__':unittest.main()

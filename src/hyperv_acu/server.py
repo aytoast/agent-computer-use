@@ -97,19 +97,27 @@ async def ensure_task_active(client,task:str='Hyper-V automation',step:str='Runn
     return state
 
 
-async def _capture_target(client,vm_id:str,target_id:str,should_auto_confirm:bool=True):
+def _norm_target(target_id:str)->str:
+    return 'desktop' if not target_id or target_id=='desktop' else target_id
+
+
+async def _capture_target(client,vm_id:str,target_id:str='',should_auto_confirm:bool=True):
     _captures.pop(vm_id,None)
-    windows=(await client.call_tool('WindowList',{'title':''})).data
-    if not isinstance(windows,list):raise RuntimeError('Guest window list is unavailable')
-    matches=[w for w in windows if isinstance(w,dict) and w.get('target_id')==target_id]
-    if len(matches)!=1:raise ValueError('Target is missing or stale')
-    result=await client.call_tool('Screenshot',{'target_id':target_id})
+    norm=_norm_target(target_id)
+    if norm=='desktop':
+        result=await client.call_tool('DesktopScreenshot',{})
+    else:
+        windows=(await client.call_tool('WindowList',{'title':''})).data
+        if not isinstance(windows,list):raise RuntimeError('Guest window list is unavailable')
+        matches=[w for w in windows if isinstance(w,dict) and w.get('target_id')==norm]
+        if len(matches)!=1:raise ValueError('Target is missing or stale')
+        result=await client.call_tool('Screenshot',{'target_id':norm})
     width,height=metadata_and_image(result)
-    capture={'target':target_id,'time':time.monotonic(),'width':width,'height':height,'tracked':True}
+    capture={'target':norm,'time':time.monotonic(),'width':width,'height':height,'tracked':True}
     _captures[vm_id]=capture
-    review_token=input_guard.observed(INPUT_PATH,target_id)
+    review_token=input_guard.observed(INPUT_PATH,norm)
     if review_token and should_auto_confirm:
-        input_guard.confirm(INPUT_PATH,target_id,review_token,'Observed post-action screenshot')
+        input_guard.confirm(INPUT_PATH,norm,review_token,'Observed post-action screenshot')
     return result,capture,review_token
 
 def metadata_and_image(result):
@@ -200,12 +208,12 @@ async def list_windows(vm_id:str,title:str=''):
         return (await client.call_tool('WindowList',{'title':title})).content
 
 @server.tool(name='screenshot',annotations={'readOnlyHint':True})
-async def screenshot(vm_id:str,target_id:str):
-    """Capture a fresh guest window. The game must be foreground for its dedicated capture."""
+async def screenshot(vm_id:str,target_id:str=''):
+    """Capture the full guest desktop (default) or a specific target_id window."""
     require_vm(vm_id)
     async with _lock,connection() as client:
         await status_checked(client)
-        result,_,_=await _capture_target(client,vm_id,target_id,auto_confirm=True)
+        result,_,_=await _capture_target(client,vm_id,target_id,should_auto_confirm=True)
         return result.content
 
 @server.tool(name='window_snapshot',annotations={'readOnlyHint':True})
@@ -248,6 +256,8 @@ async def _dispatch_click(client,target_id:str,capture:dict,x:int,y:int,coordina
     _validate_button(button)
     _validate_clicks(clicks)
     point=_resolve_point(x,y,coordinate_space,capture)
+    if _norm_target(target_id)=='desktop':
+        return (await client.call_tool('DesktopClick',{'point':point,'button':button,'clicks':clicks})).content
     return (await client.call_tool('click',{
         'target_id':target_id,'point':point,'button':button,'clicks':clicks,
         'consume_frame':should_consume_frame,'guard_input':should_guard_input,
@@ -258,6 +268,8 @@ async def _dispatch_move(client,target_id:str,capture:dict,x:int,y:int,coordinat
     if type(hover_ms) is not int or not 0<=hover_ms<=30000:
         raise ValueError('hover_ms must be an integer between 0 and 30000')
     point=_resolve_point(x,y,coordinate_space,capture)
+    if _norm_target(target_id)=='desktop':
+        return (await client.call_tool('DesktopMove',{'point':point,'hover_ms':hover_ms})).content
     return (await client.call_tool('move',{
         'target_id':target_id,'point':point,'hover_ms':hover_ms,
         'consume_frame':should_consume_frame,'guard_input':should_guard_input,
@@ -270,6 +282,8 @@ async def _dispatch_drag(client,target_id:str,capture:dict,start_x:int,start_y:i
         raise ValueError('duration_ms must be an integer between 0 and 10000')
     start_point=_resolve_point(start_x,start_y,coordinate_space,capture)
     end_point=_resolve_point(end_x,end_y,coordinate_space,capture)
+    if _norm_target(target_id)=='desktop':
+        return (await client.call_tool('DesktopDrag',{'start_point':start_point,'end_point':end_point,'button':button,'duration_ms':duration_ms})).content
     return (await client.call_tool('drag',{
         'target_id':target_id,'start_point':start_point,'end_point':end_point,
         'button':button,'duration_ms':duration_ms,'consume_frame':should_consume_frame,'guard_input':should_guard_input,
@@ -283,6 +297,8 @@ async def _dispatch_scroll(client,target_id:str,capture:dict|None,delta:int,poin
         if x is None or y is None:raise ValueError('Both x and y are required when scrolling at a position')
         if not capture:raise ValueError('A fresh screenshot of this exact target is required')
         resolved_point=_resolve_point(x,y,coordinate_space,capture)
+    if _norm_target(target_id)=='desktop':
+        return (await client.call_tool('DesktopScroll',{'dx':dx,'dy':dy,'point':resolved_point})).content
     return (await client.call_tool('scroll',{
         'target_id':target_id,'dx':dx,'dy':dy,'point':resolved_point,
         'consume_frame':should_consume_frame,'guard_input':should_guard_input,
@@ -290,39 +306,42 @@ async def _dispatch_scroll(client,target_id:str,capture:dict|None,delta:int,poin
 
 
 @server.tool(name='click')
-async def click(vm_id:str,target_id:str,x:int,y:int,coordinate_space:str='pixels',button:str='left',clicks:int=1):
-    """Click screenshot coordinates in pixels or normalized_1000 inside the configured VM."""
+async def click(vm_id:str,x:int,y:int,target_id:str='',coordinate_space:str='pixels',button:str='left',clicks:int=1):
+    """Click screenshot coordinates on full desktop (default) or target_id window inside the VM."""
     require_vm(vm_id)
+    norm=_norm_target(target_id)
     async with _lock,connection() as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         capture=_captures.pop(vm_id,None)
-        require_capture(capture,target_id,time.monotonic())
-        return await _dispatch_click(client,target_id,capture,x,y,coordinate_space,button,clicks)
+        require_capture(capture,norm,time.monotonic())
+        return await _dispatch_click(client,norm,capture,x,y,coordinate_space,button,clicks)
 
 
 @server.tool(name='move')
-async def move(vm_id:str,target_id:str,x:int,y:int,coordinate_space:str='pixels',hover_ms:int=0):
-    """Move the guest cursor to screenshot coordinates and optionally hover."""
+async def move(vm_id:str,x:int,y:int,target_id:str='',coordinate_space:str='pixels',hover_ms:int=0):
+    """Move the guest cursor to screenshot coordinates on full desktop (default) or target_id window."""
     require_vm(vm_id)
+    norm=_norm_target(target_id)
     async with _lock,connection() as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         capture=_captures.pop(vm_id,None)
-        require_capture(capture,target_id,time.monotonic())
-        return await _dispatch_move(client,target_id,capture,x,y,coordinate_space,hover_ms)
+        require_capture(capture,norm,time.monotonic())
+        return await _dispatch_move(client,norm,capture,x,y,coordinate_space,hover_ms)
 
 
 @server.tool(name='drag')
-async def drag(vm_id:str,target_id:str,start_x:int,start_y:int,end_x:int,end_y:int,coordinate_space:str='pixels',button:str='left',duration_ms:int=250):
-    """Drag the guest cursor from start coordinates to end coordinates."""
+async def drag(vm_id:str,start_x:int,start_y:int,end_x:int,end_y:int,target_id:str='',coordinate_space:str='pixels',button:str='left',duration_ms:int=250):
+    """Drag the guest cursor from start to end coordinates on full desktop (default) or target_id window."""
     require_vm(vm_id)
+    norm=_norm_target(target_id)
     async with _lock,connection() as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         capture=_captures.pop(vm_id,None)
-        require_capture(capture,target_id,time.monotonic())
-        return await _dispatch_drag(client,target_id,capture,start_x,start_y,end_x,end_y,coordinate_space,button,duration_ms)
+        require_capture(capture,norm,time.monotonic())
+        return await _dispatch_drag(client,norm,capture,start_x,start_y,end_x,end_y,coordinate_space,button,duration_ms)
 
 
 @server.tool(name='focus_window')
@@ -357,15 +376,16 @@ async def type_text(vm_id:str,target_id:str,text:str,element_token:str|None=None
 
 
 @server.tool(name='scroll')
-async def scroll(vm_id:str,target_id:str,delta:int=0,element_token:str|None=None,point:list[int]|None=None,x:int|None=None,y:int|None=None,coordinate_space:str='pixels',direction:str='vertical',dx:int=0,dy:int=0):
-    """Scroll vertically or horizontally, optionally at screenshot coordinates."""
+async def scroll(vm_id:str,delta:int=0,target_id:str='',element_token:str|None=None,point:list[int]|None=None,x:int|None=None,y:int|None=None,coordinate_space:str='pixels',direction:str='vertical',dx:int=0,dy:int=0):
+    """Scroll vertically or horizontally on full desktop (default) or target_id window."""
     require_vm(vm_id)
+    norm=_norm_target(target_id)
     async with _lock,connection() as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         capture=_captures.pop(vm_id,None)
-        require_capture(capture,target_id,time.monotonic())
-        return await _dispatch_scroll(client,target_id,capture,delta,point,x,y,coordinate_space,direction,dx,dy)
+        require_capture(capture,norm,time.monotonic())
+        return await _dispatch_scroll(client,norm,capture,delta,point,x,y,coordinate_space,direction,dx,dy)
 
 
 @server.tool(name='wait')
@@ -452,8 +472,9 @@ async def _execute_batch_step(client,vm_id:str,target_id:str,capture:dict,item:d
 
 @server.tool(name='batch')
 async def batch(vm_id:str,target_id:str,actions:list[dict],stop_on_error:bool=True,task:str|None=None,step:str|None=None,should_complete_task:bool=False,observed_result:str|None=None):
-    """Execute a sequence of guest actions (click, double_click, move, drag, scroll, key, type, wait, screenshot, task_context) with integrated task context and result confirmation."""
+    """Execute a sequence of guest actions (click, double_click, move, drag, scroll, key, type, wait, screenshot, task_context) on target_id window or ''/'desktop' for full desktop."""
     require_vm(vm_id)
+    norm=_norm_target(target_id)
     if not isinstance(actions,list) or not 1<=len(actions)<=50:
         raise ValueError('actions must be a list of 1 to 50 action dicts')
     for item in actions:
@@ -461,13 +482,13 @@ async def batch(vm_id:str,target_id:str,actions:list[dict],stop_on_error:bool=Tr
             raise ValueError('Each batch entry must be a dict with an action string')
     async with _lock,connection() as client:
         if observed_result is not None:
-            review_token=input_guard.observed(INPUT_PATH,target_id)
-            if review_token:input_guard.confirm(INPUT_PATH,target_id,review_token,observed_result)
+            review_token=input_guard.observed(INPUT_PATH,norm)
+            if review_token:input_guard.confirm(INPUT_PATH,norm,review_token,observed_result)
         input_guard.require_clear(INPUT_PATH)
         task_name=task or 'Hyper-V automation'
         await ensure_task_active(client,task=task_name,step=step or 'Batch running')
         capture=_captures.pop(vm_id,None)
-        require_capture(capture,target_id,time.monotonic())
+        require_capture(capture,norm,time.monotonic())
         pointer_actions={'click','double_click','move','drag','scroll'}
         pointer_indices=[index for index,entry in enumerate(actions) if entry.get('action') in pointer_actions]
         last_pointer_index=pointer_indices[-1] if pointer_indices else -1
