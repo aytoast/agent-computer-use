@@ -239,6 +239,10 @@ class PipThumbnailWindow:
         return x, y
 
     def _aspect_ratio(self) -> float:
+        if self.thumb:
+            sz = wintypes.SIZE()
+            if dwmapi.DwmQueryThumbnailSourceSize(self.thumb, ctypes.byref(sz)) == 0 and sz.cx > 0 and sz.cy > 0:
+                return sz.cx / sz.cy
         with self._frame_lock:
             fw, fh = self._frame_size
         if fw > 0 and fh > 0:
@@ -464,6 +468,7 @@ class PipThumbnailWindow:
                     thumb = wintypes.HANDLE()
                     if dwmapi.DwmRegisterThumbnail(self.hwnd, target, ctypes.byref(thumb)) == 0:
                         self.thumb = thumb
+                        self._apply_anim_rect()
                         self._update_props()
                 return
         self._unregister()
@@ -639,6 +644,11 @@ class PipThumbnailWindow:
             self._set_visible(bool(wparam))
             return 0
         if msg == win32con.WM_APP + 2:
+            if not self._moving and not self._animating:
+                _, _, tw, th = self._target_rect()
+                l, t, r, b = win32gui.GetWindowRect(hwnd)
+                if abs((r - l) - tw) > 2 or abs((b - t) - th) > 2:
+                    self._apply_anim_rect()
             win32gui.InvalidateRect(hwnd, None, False)
             return 0
         if msg == win32con.WM_NCHITTEST:
