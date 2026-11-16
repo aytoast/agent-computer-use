@@ -97,6 +97,35 @@ def _invoke_broker(operation:str,payload:dict|None=None)->dict:
 
 _PIP_MODULE=None
 _THUMBNAILS:dict[str,subprocess.Popen]={}
+_THUMB_STATE_PATH=ROOT/'runtime'/'thumbnails.json'
+
+
+def _load_thumbnail_pids()->dict[str,int]:
+    try:
+        if _THUMB_STATE_PATH.is_file():
+            data=json.loads(_THUMB_STATE_PATH.read_text(encoding='utf-8'))
+            if isinstance(data,dict):
+                return {str(k).lower():int(v) for k,v in data.items() if isinstance(v,int)}
+    except Exception:
+        pass
+    return {}
+
+
+def _save_thumbnail_pids(mapping:dict[str,int]):
+    try:
+        _THUMB_STATE_PATH.parent.mkdir(parents=True,exist_ok=True)
+        _THUMB_STATE_PATH.write_text(json.dumps(mapping,indent=2),encoding='utf-8')
+    except Exception:
+        pass
+
+
+def _pid_is_pip(pid:int)->bool:
+    try:
+        import psutil
+        proc=psutil.Process(pid)
+        return proc.is_running() and any('pip_thumbnail' in arg for arg in (proc.cmdline() or []))
+    except Exception:
+        return False
 
 
 def _ensure_vm_thumbnail(vm_id:str,vm_name:str=''):
@@ -104,6 +133,10 @@ def _ensure_vm_thumbnail(vm_id:str,vm_name:str=''):
     key=vm_id.strip().lower()
     existing=_THUMBNAILS.get(key)
     if existing is not None and existing.poll() is None:return
+    pids=_load_thumbnail_pids()
+    saved_pid=pids.get(key)
+    if saved_pid and _pid_is_pip(saved_pid):
+        return
     title=vm_name
     if not title:
         from hyperv_acu import vm_pool
@@ -116,11 +149,14 @@ def _ensure_vm_thumbnail(vm_id:str,vm_name:str=''):
         env=dict(os.environ)
         env['PYTHONPATH']=str(ROOT/'src')
         env['HYPERV_VM_ID']=key
-        _THUMBNAILS[key]=subprocess.Popen(
+        proc=subprocess.Popen(
             [PYTHON,'-m','hyperv_acu.pip_thumbnail','--title',title,'--notch'],
             env=env,
             creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),
         )
+        _THUMBNAILS[key]=proc
+        pids[key]=proc.pid
+        _save_thumbnail_pids(pids)
     except Exception:
         pass
 
@@ -680,12 +716,22 @@ async def restore_vm(vm_id:str,checkpoint_name:str):
     require_vm(vm_id)
     return await asyncio.to_thread(_invoke_broker,'restore_vm',{'vm_id':vm_id.strip().lower(),'checkpoint_name':checkpoint_name})
 
+def _startup_thumbnail_scan():
+    if os.environ.get('HYPERV_DISABLE_PIP')=='1':return
+    try:
+        asyncio.run(list_vms())
+    except Exception:
+        pass
+
+
 def main():
-    import argparse
+    import argparse,threading
     parser=argparse.ArgumentParser()
     parser.add_argument('--http',action='store_true')
     parser.add_argument('--port',type=int,default=18800)
     args=parser.parse_args()
+    if os.environ.get('HYPERV_DISABLE_PIP')!='1':
+        threading.Thread(target=_startup_thumbnail_scan,daemon=True).start()
     if args.http:
         server.run(transport='streamable-http',host='127.0.0.1',port=args.port)
     else:

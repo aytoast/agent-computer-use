@@ -1,7 +1,8 @@
+param([string]$RepoRoot='')
 $ErrorActionPreference='Stop'
 $principal=[Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
 if(-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)){throw 'Elevated execution is required.'}
-$rootDir=Split-Path -Parent $PSScriptRoot
+$rootDir=if($RepoRoot){$RepoRoot}else{Split-Path -Parent $PSScriptRoot}
 . (Join-Path $PSScriptRoot 'guest-env.ps1')
 $settings=Get-HyperVSettings -RootDir $rootDir
 $vmId=[guid]$settings['vm_id']
@@ -54,7 +55,12 @@ while($true) {
         if(!$line -or $line.Length -gt 4096){throw 'Invalid request.'}
         $request=$line|ConvertFrom-Json -ErrorAction Stop
         $properties=@($request.PSObject.Properties.Name)
-        if(($properties -notcontains 'operation') -or ($properties|Where-Object{$_ -notin @('operation','payload')}).Count -gt 0){throw 'Unsupported request fields.'}
+        if(($properties -notcontains 'operation') -or ($properties|Where-Object{$_ -notin @('operation','payload','token')}).Count -gt 0){throw 'Unsupported request fields.'}
+        $tokFile=Join-Path $rootDir 'runtime\broker-token.txt'
+        if(Test-Path -LiteralPath $tokFile){
+            $expectedTok=(Get-Content -LiteralPath $tokFile -Raw).Trim()
+            if(-not $expectedTok -or [string]$request.token -ne $expectedTok){throw 'Invalid broker token.'}
+        }
         $operation=[string]$request.operation
         $payload=$request.payload
         $reply=[ordered]@{ok=$true;operation=$operation}
@@ -75,6 +81,9 @@ while($true) {
                 if($mode -notin @('ephemeral','persistent')){throw 'Invalid VM mode.'}
                 $baseVhdx=[string]$payload.base_vhdx
                 if(-not $baseVhdx -or -not (Test-Path -LiteralPath $baseVhdx)){throw 'Base VHDX not found.'}
+                $resolvedBase=[IO.Path]::GetFullPath($baseVhdx)
+                $allowedBaseDir=if($settings['base_vhdx']){Split-Path -Parent ([IO.Path]::GetFullPath([string]$settings['base_vhdx']))}else{'C:\HyperV\Base'}
+                if(-not $resolvedBase.StartsWith($allowedBaseDir,[StringComparison]::OrdinalIgnoreCase)){throw 'Base VHDX path outside allowed directory.'}
                 $storageDir=if($settings['vm_storage_dir']){[string]$settings['vm_storage_dir']}else{Join-Path $rootDir 'runtime\vms'}
                 New-Item -ItemType Directory -Path $storageDir -Force | Out-Null
                 $diffVhdx=Join-Path $storageDir "$name.vhdx"
@@ -82,7 +91,7 @@ while($true) {
                 $switchName=if($settings['default_switch']){[string]$settings['default_switch']}else{'Default Switch'}
                 $memBytes=[int64]([Math]::Max(2,[int]$payload.memory_gb)*1GB)
                 $cpus=[Math]::Max(1,[int]$payload.cpu_count)
-                New-VHD -Path $diffVhdx -ParentPath $baseVhdx -Differencing -ErrorAction Stop | Out-Null
+                New-VHD -Path $diffVhdx -ParentPath $resolvedBase -Differencing -ErrorAction Stop | Out-Null
                 $newVm=New-VM -Name $name -MemoryStartupBytes $memBytes -VHDPath $diffVhdx -SwitchName $switchName -Generation 2 -ErrorAction Stop
                 Set-VMProcessor -VM $newVm -Count $cpus -ErrorAction Stop
                 $randBytes=New-Object byte[] 3
@@ -90,14 +99,19 @@ while($true) {
                 $mac='00155D'+(($randBytes|ForEach-Object{$_.ToString('X2')}) -join '')
                 Get-VMNetworkAdapter -VM $newVm | Set-VMNetworkAdapter -StaticMacAddress $mac -ErrorAction Stop
                 Start-VM -VM $newVm -ErrorAction Stop
-                $reply.vm=[ordered]@{id=$newVm.Id.ToString().ToLowerInvariant();name=$newVm.Name;mac=$mac;mode=$mode;base_vhdx=$baseVhdx;diff_vhdx=$diffVhdx;port=$guestPort}
+                $reply.vm=[ordered]@{id=$newVm.Id.ToString().ToLowerInvariant();name=$newVm.Name;mac=$mac;mode=$mode;base_vhdx=$resolvedBase;diff_vhdx=$diffVhdx;port=$guestPort}
             }
             'destroy_vm' {
                 $targetVm=Get-VM -Id ([guid]$payload.vm_id) -ErrorAction Stop
                 if($targetVm.State -ne 'Off'){Stop-VM -VM $targetVm -TurnOff -Force -ErrorAction Stop}
                 Remove-VM -VM $targetVm -Force -ErrorAction Stop
                 $diff=[string]$payload.diff_vhdx
-                if($diff -and (Test-Path -LiteralPath $diff)){Remove-Item -LiteralPath $diff -Force}
+                $storageDir=[IO.Path]::GetFullPath((if($settings['vm_storage_dir']){[string]$settings['vm_storage_dir']}else{Join-Path $rootDir 'runtime\vms'}))
+                if($diff -and (Test-Path -LiteralPath $diff)){
+                    $resolvedDiff=[IO.Path]::GetFullPath($diff)
+                    if(-not $resolvedDiff.StartsWith($storageDir,[StringComparison]::OrdinalIgnoreCase)){throw 'Refusing to delete disk outside vm_storage_dir.'}
+                    Remove-Item -LiteralPath $resolvedDiff -Force
+                }
                 $reply.destroyed=$targetVm.Id.ToString().ToLowerInvariant()
             }
             'start_vm' {
@@ -126,6 +140,10 @@ while($true) {
                 $src=[string]$payload.src
                 $dst=[string]$payload.dst
                 if(-not $src -or -not (Test-Path -LiteralPath $src)){throw "Source file not found: $src"}
+                $resolvedSrc=[IO.Path]::GetFullPath($src)
+                $guestSrcDir=[IO.Path]::GetFullPath((Join-Path $rootDir 'guest'))
+                $scriptSrcDir=[IO.Path]::GetFullPath((Join-Path $rootDir 'scripts'))
+                if(-not ($resolvedSrc.StartsWith($guestSrcDir,[StringComparison]::OrdinalIgnoreCase) -or $resolvedSrc.StartsWith($scriptSrcDir,[StringComparison]::OrdinalIgnoreCase))){throw 'copy_file restricted to guest/ or scripts/'}
                 if(-not $dst){throw 'Destination path required.'}
                 $targetVm=if($payload.vm_id){Get-VM -Id ([guid]$payload.vm_id) -ErrorAction Stop}elseif($payload.vm_name){Get-VM -Name ([string]$payload.vm_name) -ErrorAction Stop}else{Get-VM -Id $vmId -ErrorAction Stop}
                 if($targetVm.State -ne 'Running'){throw 'Target VM is not running.'}
@@ -137,6 +155,14 @@ while($true) {
                     Copy-Item -LiteralPath $src -Destination $dst -ToSession $session -Force -ErrorAction Stop
                     $reply.copied=$dst
                 } finally {Remove-PSSession $session -ErrorAction SilentlyContinue}
+            }
+            'get_vm_ip' {
+                $mac=if($payload.mac){([string]$payload.mac -replace '[^0-9A-Fa-f]','').ToUpperInvariant()}else{''}
+                $adapters=if($payload.vm_id){Get-VM -Id ([guid]$payload.vm_id) -ErrorAction Stop | Get-VMNetworkAdapter}else{Get-VM | Where-Object {$_.State -eq 'Running'} | Get-VMNetworkAdapter}
+                if($mac){$adapters=$adapters | Where-Object {($_.MacAddress -replace '[^0-9A-Fa-f]','').ToUpperInvariant() -eq $mac}}
+                $ips=@($adapters | ForEach-Object {$_.IPAddresses} | Where-Object {$_ -match '^\d{1,3}(\.\d{1,3}){3}$' -and $_ -notlike '169.254.*'})
+                if($ips.Count -lt 1){throw 'No guest IPv4 reported by Hyper-V.'}
+                $reply.ip=$ips[0]
             }
             'shutdown' {$reply.state='stopping'}
             default {throw 'Unsupported operation.'}

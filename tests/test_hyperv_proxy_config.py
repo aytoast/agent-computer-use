@@ -51,5 +51,13 @@ class HyperVProxyConfigTest(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     config.read_guest_token(Path(tmp))
 
+    def test_resolve_guest_url_falls_back_to_broker_when_arp_empty(self):
+        with patch('hyperv_acu.proxy_config.subprocess.run') as run_mock:
+            run_mock.return_value = type('P', (), {'stdout': '[]'})()
+            with patch('hyperv_acu.proxy_config._resolve_via_broker', return_value='172.23.10.5') as broker_mock:
+                url = config.resolve_guest_url(expected_mac='00155D000001', guest_port=18777)
+                self.assertEqual(url, 'http://172.23.10.5:18777/mcp')
+                broker_mock.assert_called_once_with(expected_mac='00155D000001')
+
 if __name__ == '__main__':
     unittest.main()

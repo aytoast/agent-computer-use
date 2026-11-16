@@ -14,7 +14,8 @@ param(
     [ValidateSet('ephemeral', 'persistent')][string]$Mode = 'persistent',
     [int]$MemoryGB = 4,
     [int]$CpuCount = 2,
-    [switch]$NoThumbnail
+    [switch]$NoThumbnail,
+    [switch]$InstallBroker
 )
 
 $ErrorActionPreference = 'Stop'
@@ -140,11 +141,46 @@ $settingsPath = Join-Path $rootDir 'config\settings.local.json'
 $localSettings | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
 Write-Host "Wrote $settingsPath"
 
+$runtimeDir = Join-Path $rootDir 'runtime'
+New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+$brokerTokPath = Join-Path $runtimeDir 'broker-token.txt'
+if (-not (Test-Path -LiteralPath $brokerTokPath)) {
+    [guid]::NewGuid().ToString('N') | Set-Content -LiteralPath $brokerTokPath -Encoding UTF8
+}
+$guestTokPath = Join-Path $runtimeDir 'guest-agent-token.txt'
+if (-not (Test-Path -LiteralPath $guestTokPath)) {
+    [guid]::NewGuid().ToString('N') | Set-Content -LiteralPath $guestTokPath -Encoding UTF8
+}
+$guestPwdPath = Join-Path $runtimeDir 'guest-password.txt'
+if (-not (Test-Path -LiteralPath $guestPwdPath)) {
+    '123456' | Set-Content -LiteralPath $guestPwdPath -Encoding UTF8
+}
+
 $envPath = Join-Path $rootDir '.env'
-$envExample = Join-Path $rootDir '.env.example'
-if (-not (Test-Path -LiteralPath $envPath) -and (Test-Path -LiteralPath $envExample)) {
-    Copy-Item -LiteralPath $envExample -Destination $envPath
-    Write-Host "Created $envPath from .env.example"
+if (-not (Test-Path -LiteralPath $envPath)) {
+    @(
+        "HYPERV_GUEST_TOKEN_PATH=$guestTokPath"
+        "HYPERV_GUEST_PASSWORD_PATH=$guestPwdPath"
+    ) | Set-Content -LiteralPath $envPath -Encoding UTF8
+    Write-Host "Created $envPath"
+}
+
+if ($InstallBroker) {
+    $principal = [Security.Principal.WindowsPrincipal]::new([Security.Principal.WindowsIdentity]::GetCurrent())
+    if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+        throw '-InstallBroker requires an Administrator PowerShell window.'
+    }
+    $brokerDir = 'C:\ProgramData\agent-computer-use\broker'
+    New-Item -ItemType Directory -Path $brokerDir -Force | Out-Null
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'admin-broker.ps1') -Destination (Join-Path $brokerDir 'admin-broker.ps1') -Force
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'guest-env.ps1') -Destination (Join-Path $brokerDir 'guest-env.ps1') -Force
+    icacls $brokerDir /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' 'Users:(OI)(CI)RX' | Out-Null
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$brokerDir\admin-broker.ps1`" -RepoRoot `"$rootDir`""
+    $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+    $taskPrincipal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -RunLevel Highest -LogonType Interactive
+    Register-ScheduledTask -TaskName 'HyperV-Admin-Broker' -Action $action -Trigger $trigger -Principal $taskPrincipal -Force | Out-Null
+    Start-ScheduledTask -TaskName 'HyperV-Admin-Broker'
+    Write-Host "Installed and started HyperV-Admin-Broker from $brokerDir"
 }
 
 $serverScript = Join-Path $rootDir 'src\hyperv_acu\server.py'

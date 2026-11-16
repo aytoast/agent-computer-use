@@ -56,16 +56,24 @@ class ToolNamingTest(unittest.TestCase):
 
 class NewToolsValidationTest(unittest.TestCase):
     def setUp(self):
+        import tempfile
         import hyperv_acu.app_policy as app_policy
         server._clients.clear()
+        server._STATUS_CACHE['time'] = 0.0
+        server._STATUS_CACHE['state'] = None
+        self._tmp = tempfile.TemporaryDirectory()
         self._p1 = patch.object(server, 'VM_ID', '00000000-0000-0000-0000-000000000001')
         self._p2 = patch.object(app_policy, 'VM_ID', '00000000-0000-0000-0000-000000000001')
+        self._p3 = patch.object(server, 'INPUT_PATH', Path(self._tmp.name) / 'input-block.json')
         self._p1.start()
         self._p2.start()
+        self._p3.start()
 
     def tearDown(self):
+        self._p3.stop()
         self._p2.stop()
         self._p1.stop()
+        self._tmp.cleanup()
 
     def test_scroll_delta_resolution(self):
         self.assertEqual(server._resolve_scroll_deltas(120,'vertical',0,0),(0,120))
@@ -183,16 +191,20 @@ class NewToolsValidationTest(unittest.TestCase):
         self.assertEqual(click_args['point'],[960,540])
 
     def test_ensure_vm_thumbnail_deduplicates_per_vm(self):
+        import tempfile
         spawned=[]
         class FakeProc:
-            def __init__(self):self.alive=True
+            def __init__(self):self.alive=True;self.pid=4242
             def poll(self):return None if self.alive else 0
         def fake_popen(cmd,env=None,**kwargs):
             p=FakeProc()
             spawned.append((cmd,env,p))
             return p
         server._THUMBNAILS.clear()
-        with patch.dict(os.environ,{'HYPERV_DISABLE_PIP':'0'},clear=False), \
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch.dict(os.environ,{'HYPERV_DISABLE_PIP':'0'},clear=False), \
+             patch.object(server,'_THUMB_STATE_PATH',Path(tmp)/'thumbnails.json'), \
+             patch.object(server,'_pid_is_pip',return_value=False), \
              patch.object(server.subprocess,'Popen',side_effect=fake_popen):
             server._ensure_vm_thumbnail(server.VM_ID,'Agent-01')
             server._ensure_vm_thumbnail(server.VM_ID,'Agent-01')

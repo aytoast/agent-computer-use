@@ -69,6 +69,23 @@ def guest_url(address: str, port: int | None = None) -> str:
     return f'http://{ip}:{port or GUEST_PORT}/mcp'
 
 
+def _resolve_via_broker(expected_mac: str | None = None) -> str:
+    script = ROOT / 'scripts' / 'admin-request.ps1'
+    if not script.is_file():
+        raise ValueError('No matching Hyper-V guest IPv4 neighbor found')
+    payload = json.dumps({'mac': expected_mac or EXPECTED_MAC})
+    proc = subprocess.run(
+        ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(script), '-Operation', 'get_vm_ip', '-PayloadJson', payload],
+        capture_output=True, text=True, timeout=15, check=True,
+        creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+    )
+    reply = json.loads(proc.stdout)
+    ip = reply.get('ip')
+    if not ip:
+        raise ValueError('Hyper-V broker did not return a guest IP')
+    return str(ip)
+
+
 def resolve_guest_url(expected_mac: str | None = None, guest_port: int | None = None) -> str:
     """Query Hyper-V Default Switch neighbors and return the guest MCP URL."""
     proc = subprocess.run(
@@ -76,7 +93,11 @@ def resolve_guest_url(expected_mac: str | None = None, guest_port: int | None = 
         capture_output=True, text=True, timeout=15, check=True,
         creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
     )
-    return guest_url(resolve_guest(json.loads(proc.stdout), expected_mac=expected_mac), port=guest_port)
+    try:
+        ip = resolve_guest(json.loads(proc.stdout), expected_mac=expected_mac)
+    except ValueError:
+        ip = _resolve_via_broker(expected_mac=expected_mac)
+    return guest_url(ip, port=guest_port)
 
 
 def resolve_guest_endpoint(root: Path | None = None) -> tuple[str, str]:
