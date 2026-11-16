@@ -64,6 +64,30 @@ def _invoke_broker(operation:str,payload:dict|None=None)->dict:
     return data
 
 _PIP_MODULE=None
+_THUMBNAILS:dict[str,subprocess.Popen]={}
+
+
+def _ensure_vm_thumbnail(vm_id:str,vm_name:str=''):
+    if os.environ.get('HYPERV_DISABLE_PIP')=='1' or not vm_id:return
+    key=vm_id.strip().lower()
+    existing=_THUMBNAILS.get(key)
+    if existing is not None and existing.poll() is None:return
+    title=vm_name
+    if not title:
+        from hyperv_acu import vm_pool
+        rec=vm_pool.get_vm(key)
+        title=(rec or {}).get('name') or str(load_settings().get('vm_name','')) or key[:8]
+    try:
+        env=dict(os.environ)
+        env['PYTHONPATH']=str(ROOT/'src')
+        env['HYPERV_VM_ID']=key
+        _THUMBNAILS[key]=subprocess.Popen(
+            [PYTHON,'-m','hyperv_acu.pip_thumbnail','--title',title,'--notch'],
+            env=env,
+            creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0),
+        )
+    except Exception:
+        pass
 
 
 def notify_notch_thumbnail():
@@ -190,7 +214,9 @@ async def list_vms():
             try:
                 async with connection(vm_id=vid) as client:
                     result=await client.call_tool('AgentStatus',{})
-                    connected[vid]=isinstance(result.data,dict)
+                    is_up=isinstance(result.data,dict)
+                    connected[vid]=is_up
+                    if is_up:_ensure_vm_thumbnail(vid,vm.get('name',''))
             except Exception:
                 connected[vid]=False
     return format_vm_inventory(vms,connected,managed_ids=managed)
@@ -199,7 +225,9 @@ async def list_vms():
 async def agent_status(vm_id:str):
     require_vm(vm_id)
     async with _lock,connection(vm_id=vm_id) as client:
-        return (await client.call_tool('AgentStatus',{})).content
+        res=await client.call_tool('AgentStatus',{})
+        if isinstance(res.data,dict):_ensure_vm_thumbnail(vm_id)
+        return res.content
 
 @server.tool(name='list_windows',annotations={'readOnlyHint':True})
 async def list_windows(vm_id:str,title:str=''):
@@ -566,10 +594,9 @@ async def create_vm(name:str,mode:str='ephemeral',base_vhdx:str='',memory_gb:int
     if os.environ.get('HYPERV_DISABLE_PIP')!='1':
         try:
             subprocess.Popen(['vmconnect.exe','localhost',record['name']],creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-            env=dict(os.environ);env['PYTHONPATH']=str(ROOT/'src')
-            subprocess.Popen([PYTHON,'-m','hyperv_acu.pip_thumbnail','--title',record['name'],'--notch'],env=env,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
         except Exception:
             pass
+        _ensure_vm_thumbnail(record['id'],record['name'])
     return record
 
 @server.tool(name='destroy_vm')
@@ -588,7 +615,9 @@ async def destroy_vm(vm_id:str):
 async def start_vm(vm_id:str):
     """Start a managed Hyper-V VM."""
     require_vm(vm_id)
-    return await asyncio.to_thread(_invoke_broker,'start_vm',{'vm_id':vm_id.strip().lower()})
+    reply=await asyncio.to_thread(_invoke_broker,'start_vm',{'vm_id':vm_id.strip().lower()})
+    _ensure_vm_thumbnail(vm_id)
+    return reply
 
 @server.tool(name='stop_vm')
 async def stop_vm(vm_id:str,force:bool=False):

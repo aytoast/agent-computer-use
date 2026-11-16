@@ -175,4 +175,24 @@ class NewToolsValidationTest(unittest.TestCase):
         click_args=next(args for name,args in calls if name=='DesktopClick')
         self.assertEqual(click_args['point'],[960,540])
 
+    def test_ensure_vm_thumbnail_deduplicates_per_vm(self):
+        spawned=[]
+        class FakeProc:
+            def __init__(self):self.alive=True
+            def poll(self):return None if self.alive else 0
+        def fake_popen(cmd,env=None,**kwargs):
+            p=FakeProc()
+            spawned.append((cmd,env,p))
+            return p
+        server._THUMBNAILS.clear()
+        with patch.dict(os.environ,{'HYPERV_DISABLE_PIP':'0'},clear=False), \
+             patch.object(server.subprocess,'Popen',side_effect=fake_popen):
+            server._ensure_vm_thumbnail(server.VM_ID,'Agent-01')
+            server._ensure_vm_thumbnail(server.VM_ID,'Agent-01')
+            self.assertEqual(len(spawned),1)
+            self.assertEqual(spawned[0][1]['HYPERV_VM_ID'],server.VM_ID)
+            spawned[0][2].alive=False
+            server._ensure_vm_thumbnail(server.VM_ID,'Agent-01')
+            self.assertEqual(len(spawned),2)
+
 if __name__=='__main__':unittest.main()
