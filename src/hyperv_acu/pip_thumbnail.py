@@ -233,6 +233,12 @@ class PipThumbnailWindow:
         self.thumb = None
         self.visible = True
         self.collapsed = False
+        self._hidden_for_vmconnect = False
+        self._fade_alpha = 255
+        self._fade_from = 255
+        self._fade_to = 255
+        self._fade_start = 0.0
+        self._fade_animating = False
         self._docked = True
         self.edge = 'left'
         self.edge_offset = None
@@ -466,18 +472,40 @@ class PipThumbnailWindow:
             and self.idle_seconds > 0 and now - self.last_activity >= self.idle_seconds
         )
 
-    def _step_animation(self):
-        if not self._animating:
+    def _set_fade(self, target_alpha: int):
+        target_alpha = max(0, min(255, target_alpha))
+        if target_alpha > 0 and self.hwnd and not win32gui.IsWindowVisible(self.hwnd):
+            win32gui.ShowWindow(self.hwnd, win32con.SW_SHOWNOACTIVATE)
+        if target_alpha == self._fade_to and (not self._fade_animating or self._fade_alpha == target_alpha):
             return
-        t = min(1.0, (time.monotonic() - self._anim_start) / ANIM_DURATION)
-        eased = 1.0 - (1.0 - t) ** 3
-        self._anim_p = self._anim_from + (self._anim_to - self._anim_from) * eased
-        if t >= 1.0:
-            self._anim_p = self._anim_to
-            self._animating = False
+        self._fade_from = self._fade_alpha
+        self._fade_to = target_alpha
+        self._fade_start = time.monotonic()
+        self._fade_animating = True
+        if self.hwnd:
+            user32.SetTimer(self.hwnd, ANIM_TIMER_ID, 15, None)
+
+    def _step_animation(self):
+        if self._animating:
+            t = min(1.0, (time.monotonic() - self._anim_start) / ANIM_DURATION)
+            eased = 1.0 - (1.0 - t) ** 3
+            self._anim_p = self._anim_from + (self._anim_to - self._anim_from) * eased
+            if t >= 1.0:
+                self._anim_p = self._anim_to
+                self._animating = False
+            self._apply_anim_rect()
+        if self._fade_animating:
+            t = min(1.0, (time.monotonic() - self._fade_start) / ANIM_DURATION)
+            self._fade_alpha = round(self._fade_from + (self._fade_to - self._fade_from) * t)
             if self.hwnd:
-                user32.KillTimer(self.hwnd, ANIM_TIMER_ID)
-        self._apply_anim_rect()
+                win32gui.SetLayeredWindowAttributes(self.hwnd, 0, self._fade_alpha, win32con.LWA_ALPHA)
+                if t >= 1.0 and self._fade_to == 0:
+                    win32gui.ShowWindow(self.hwnd, win32con.SW_HIDE)
+            if t >= 1.0:
+                self._fade_alpha = self._fade_to
+                self._fade_animating = False
+        if not self._animating and not self._fade_animating and self.hwnd:
+            user32.KillTimer(self.hwnd, ANIM_TIMER_ID)
 
     def _update_props(self):
         if not self.thumb or not self.hwnd:
@@ -788,7 +816,9 @@ class PipThumbnailWindow:
             x = ctypes.c_short(lparam & 0xFFFF).value
             _, _, r, _ = win32gui.GetClientRect(hwnd)
             if not self.collapsed and x < max(0, r - HANDLE_W):
-                self._open_vmconnect()
+                if self._open_vmconnect():
+                    self._hidden_for_vmconnect = True
+                    self._set_fade(0)
             return 0
         if msg == win32con.WM_CLOSE:
             if not self._allow_close:
@@ -809,6 +839,12 @@ class PipThumbnailWindow:
                 self._step_animation()
                 return 0
             if self.visible:
+                if self._hidden_for_vmconnect:
+                    fg = win32gui.GetForegroundWindow()
+                    vm_hwnd = self.src_hwnd if (self.src_hwnd and win32gui.IsWindow(self.src_hwnd)) else find_vmconnect_hwnd(self.title_hint)
+                    if not vm_hwnd or fg != vm_hwnd:
+                        self._hidden_for_vmconnect = False
+                        self._set_fade(255)
                 self._sync_source()
                 if self._should_auto_close():
                     self._request_close()
@@ -848,11 +884,12 @@ class PipThumbnailWindow:
         atom = win32gui.RegisterClass(wc)
 
         x, y, w, h = self._target_rect()
-        ex_style = win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_NOACTIVATE
+        ex_style = win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_NOACTIVATE | win32con.WS_EX_LAYERED
         style = win32con.WS_POPUP | win32con.WS_VISIBLE
         self.hwnd = win32gui.CreateWindowEx(
             ex_style, atom, 'Hyper-V PiP', style, x, y, w, h, 0, 0, 0, None
         )
+        win32gui.SetLayeredWindowAttributes(self.hwnd, 0, 255, win32con.LWA_ALPHA)
         pref = ctypes.c_int(DWMWCP_ROUNDSMALL)
         dwmapi.DwmSetWindowAttribute(self.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ctypes.byref(pref), ctypes.sizeof(pref))
         self._apply_region(x, y, w, h)
