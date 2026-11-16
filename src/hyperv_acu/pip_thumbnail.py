@@ -455,8 +455,17 @@ class PipThumbnailWindow:
         return True
 
     def _sync_source(self):
-        if self.src_hwnd and win32gui.IsWindow(self.src_hwnd):
+        target = self.src_hwnd if (self.src_hwnd and win32gui.IsWindow(self.src_hwnd)) else find_vmconnect_hwnd(self.title_hint)
+        if target and win32gui.IsWindow(target):
+            self.src_hwnd = target
             self._had_source = True
+            if not win32gui.IsIconic(target):
+                if not self.thumb and self.hwnd:
+                    thumb = wintypes.HANDLE()
+                    if dwmapi.DwmRegisterThumbnail(self.hwnd, target, ctypes.byref(thumb)) == 0:
+                        self.thumb = thumb
+                        self._update_props()
+                return
         self._unregister()
         self._ensure_guest_fetcher()
 
@@ -471,14 +480,18 @@ class PipThumbnailWindow:
         from fastmcp import Client
         from fastmcp.client.transports import StreamableHttpTransport
         from hyperv_acu import proxy_config as config
+        from hyperv_acu import vm_pool
         token = config.read_guest_token(_VM_SETUP)
+        vm_id = os.environ.get('HYPERV_VM_ID', '').strip().lower()
+        vm_rec = vm_pool.get_vm(vm_id) if vm_id else None
+        expected_mac = (vm_rec or {}).get('mac') or None
 
         async def stream_frames():
             url = None
             while not self._stop.is_set():
                 try:
                     if url is None:
-                        url = await asyncio.to_thread(config.resolve_guest_url)
+                        url = await asyncio.to_thread(config.resolve_guest_url, None, None, expected_mac)
                     async with Client(StreamableHttpTransport(url, headers={'Authorization': 'Bearer ' + token}), timeout=10) as client:
                         self._had_source = True
                         self._guest_connected = True
@@ -494,11 +507,7 @@ class PipThumbnailWindow:
                             else:
                                 windows = (await client.call_tool('WindowList', {'title': ''})).data
                                 if isinstance(windows, list) and windows:
-                                    target = next((w for w in windows if isinstance(w, dict) and w.get('class') == 'UnityWndClass'), windows[0])
-                                    if target.get('class') == 'UnityWndClass' and 'HyperVGameScreenshot' in tools:
-                                        res = await client.call_tool('HyperVGameScreenshot', {'hwnd': target['hwnd'], 'pid': target['pid']})
-                                    else:
-                                        res = await client.call_tool('Screenshot', {'target_id': target['target_id']})
+                                    res = await client.call_tool('Screenshot', {'target_id': windows[0]['target_id']})
                             if res is not None:
                                 png_bytes = None
                                 for item in res.content:
@@ -513,7 +522,7 @@ class PipThumbnailWindow:
                                         self._frame_size = img.size
                                     if self.hwnd:
                                         win32gui.PostMessage(self.hwnd, win32con.WM_APP + 2, 0, 0)
-                            await asyncio.sleep(0.35)
+                            await asyncio.sleep(0.03)
                 except Exception:
                     url = None
                     if self._guest_connected:
