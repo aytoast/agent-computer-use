@@ -37,33 +37,11 @@ pip install -e .
 powershell -ExecutionPolicy Bypass -File scripts\setup.ps1 -InstallClients all
 ```
 
-`setup.ps1` registers `computer-use` in your detected IDEs (`claude-code`, `claude-desktop`, `cursor`, `codex`, `antigravity`, `vscode`). From there, your agent handles VM provisioning, cloning, checkpoints, and teardown via MCP tools.
+`setup.ps1` registers `computer-use` across your IDEs—or target directly:
 
-### Manual per-IDE MCP config
-
-- **Claude Code**: `claude mcp add -s user computer-use -- python -B -u src/hyperv_acu/server.py`
-- **Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`), **Cursor** (`~/.cursor/mcp.json`), **Antigravity** (`~/.gemini/config/mcp_config.json`):
-
-```json
-{
-  "mcpServers": {
-    "computer-use": {
-      "command": "python",
-      "args": ["-B", "-u", "C:/path/to/agent-computer-use/src/hyperv_acu/server.py"]
-    }
-  }
-}
-```
-
-- **Codex** (`~/.codex/config.toml`):
-
-```toml
-[mcp_servers.computer-use]
-command = "python"
-args = ["-B", "-u", "C:/path/to/agent-computer-use/src/hyperv_acu/server.py"]
-```
-
-- **ChatGPT / Codex tunnel**: copy `.codex-plugin/tunnel.yaml.example` to `.codex-plugin/tunnel/hyperv.yaml` and run `scripts\connect-tunnel.ps1`.
+- **Claude Code & Claude Desktop**: `claude mcp add -s user computer-use -- python -B -u src/hyperv_acu/server.py` (`setup.ps1 -InstallClients claude-code,claude-desktop`)
+- **ChatGPT & Codex**: `scripts\install-mcp.ps1 -Clients codex` (or copy `.codex-plugin/tunnel.yaml.example` and run `scripts\connect-tunnel.ps1` for remote tunnel)
+- **Cursor, Antigravity, VS Code & others**: `scripts\install-mcp.ps1 -Clients cursor,antigravity,vscode`
 
 ## What the agent gets
 
