@@ -47,27 +47,28 @@ def main():
 
     @server.tool(name='HyperVDesktopScreenshot', annotations={'readOnlyHint': True})
     def hyperv_desktop_screenshot():
-        """Capture the entire guest virtual screen for PiP display."""
-        import ctypes
-        from ctypes import wintypes
+        """Capture the entire guest virtual screen with metadata and visible window coordinates."""
         from io import BytesIO
         from PIL import ImageGrab
 
-        user32 = ctypes.WinDLL('user32', use_last_error=True)
-        set_context = getattr(user32, 'SetThreadDpiAwarenessContext', None)
-        previous = None
-        if set_context:
-            set_context.argtypes = [wintypes.HANDLE]
-            set_context.restype = wintypes.HANDLE
-            previous = set_context(ctypes.c_void_p(-4))
-        try:
+        def _grab(user32):
+            ox, oy, vw, vh = _virtual_bounds(user32)
             image = ImageGrab.grab(all_screens=True)
             stream = BytesIO()
             image.save(stream, format='PNG')
-            return [Image(data=stream.getvalue(), format='png')]
-        finally:
-            if previous:
-                set_context(previous)
+            meta = json.dumps({
+                'target_id': 'desktop',
+                'width': image.width,
+                'height': image.height,
+                'origin_x': ox,
+                'origin_y': oy,
+                'virtual_width': vw,
+                'virtual_height': vh,
+                'windows': _visible_windows(user32, ox, oy),
+            })
+            return [meta, Image(data=stream.getvalue(), format='png')]
+
+        return _with_dpi_awareness(_grab)
 
     def _with_dpi_awareness(fn):
         import ctypes
@@ -173,34 +174,59 @@ def main():
         user32.EnumWindows(enum_cb(_cb), 0)
         return windows
 
-    @server.tool(name='DesktopScreenshot', annotations={'readOnlyHint': True})
-    def desktop_screenshot():
-        """Capture the entire guest virtual screen with metadata and visible window coordinates."""
-        from io import BytesIO
-        from PIL import ImageGrab
+    def _orig_tool(name):
+        t = server.get_tool(name)
+        return t.fn if t else None
 
-        def _grab(user32):
-            ox, oy, vw, vh = _virtual_bounds(user32)
-            image = ImageGrab.grab(all_screens=True)
-            stream = BytesIO()
-            image.save(stream, format='PNG')
-            meta = json.dumps({
-                'target_id': 'desktop',
-                'width': image.width,
-                'height': image.height,
-                'origin_x': ox,
-                'origin_y': oy,
-                'virtual_width': vw,
-                'virtual_height': vh,
-                'windows': _visible_windows(user32, ox, oy),
-            })
-            return [meta, Image(data=stream.getvalue(), format='png')]
+    _orig_click = _orig_tool('click')
+    _orig_move = _orig_tool('move')
+    _orig_drag = _orig_tool('drag')
+    _orig_scroll = _orig_tool('scroll')
+    _orig_key = _orig_tool('Key')
+    _orig_type = _orig_tool('Type')
 
-        return _with_dpi_awareness(_grab)
+    def _send_key_events(user32, events):
+        import ctypes
+        from ctypes import wintypes
 
-    @server.tool(name='DesktopClick')
-    def desktop_click(point: list[int], button: str = 'left', clicks: int = 1):
-        """Click coordinates on the full guest desktop screen."""
+        class _KEYBDINPUT(ctypes.Structure):
+            _fields_ = [
+                ('wVk', wintypes.WORD),
+                ('wScan', wintypes.WORD),
+                ('dwFlags', wintypes.DWORD),
+                ('time', wintypes.DWORD),
+                ('dwExtraInfo', ctypes.c_size_t),
+            ]
+
+        class _INPUT_UNION(ctypes.Union):
+            _fields_ = [('ki', _KEYBDINPUT)]
+
+        class _INPUT(ctypes.Structure):
+            _fields_ = [('type', wintypes.DWORD), ('union', _INPUT_UNION)]
+
+        arr = (_INPUT * len(events))()
+        for idx, (vk, scan, flags) in enumerate(events):
+            arr[idx].type = 1
+            arr[idx].union.ki = _KEYBDINPUT(wVk=vk, wScan=scan, dwFlags=flags, time=0, dwExtraInfo=0)
+        sent = user32.SendInput(len(events), arr, ctypes.sizeof(_INPUT))
+        if sent != len(events):
+            raise OSError(f'SendInput sent {sent}/{len(events)} key events (err={ctypes.get_last_error()})')
+
+    _VK_MAP = {
+        'enter': 0x0D, 'return': 0x0D, 'tab': 0x09, 'esc': 0x1B, 'escape': 0x1B,
+        'backspace': 0x08, 'space': 0x20, 'delete': 0x2E, 'del': 0x2E,
+        'up': 0x26, 'down': 0x28, 'left': 0x25, 'right': 0x27,
+        'home': 0x24, 'end': 0x23, 'pageup': 0x21, 'pagedown': 0x22,
+        'ctrl': 0x11, 'control': 0x11, 'alt': 0x12, 'shift': 0x10, 'win': 0x5B, 'super': 0x5B,
+    }
+    for _i in range(1, 13):
+        _VK_MAP[f'f{_i}'] = 0x6F + _i
+
+    @server.tool(name='click')
+    def unified_click(point: list[int], target_id: str = '', button: str = 'left', clicks: int = 1, consume_frame: bool = True, guard_input: bool = True):
+        """Click coordinates on the full desktop (default) or inside target_id window."""
+        if target_id and target_id != 'desktop' and _orig_click:
+            return _orig_click(target_id=target_id, point=point, button=button, clicks=clicks, consume_frame=consume_frame, guard_input=guard_input)
         import time
         if button not in _BTN_FLAGS:
             raise ValueError('button must be left, right, or middle')
@@ -227,9 +253,11 @@ def main():
 
         return _with_dpi_awareness(_do)
 
-    @server.tool(name='DesktopMove')
-    def desktop_move(point: list[int], hover_ms: int = 0):
-        """Move the guest cursor on the full desktop screen and optionally hover."""
+    @server.tool(name='move')
+    def unified_move(point: list[int], target_id: str = '', hover_ms: int = 0, consume_frame: bool = True, guard_input: bool = True):
+        """Move the guest cursor on the full desktop (default) or inside target_id window."""
+        if target_id and target_id != 'desktop' and _orig_move:
+            return _orig_move(target_id=target_id, point=point, hover_ms=hover_ms, consume_frame=consume_frame, guard_input=guard_input)
         import time
 
         def _do(user32):
@@ -244,9 +272,11 @@ def main():
 
         return _with_dpi_awareness(_do)
 
-    @server.tool(name='DesktopDrag')
-    def desktop_drag(start_point: list[int], end_point: list[int], button: str = 'left', duration_ms: int = 250):
-        """Drag across the full guest desktop screen."""
+    @server.tool(name='drag')
+    def unified_drag(start_point: list[int], end_point: list[int], target_id: str = '', button: str = 'left', duration_ms: int = 250, consume_frame: bool = True, guard_input: bool = True):
+        """Drag across the full desktop (default) or inside target_id window."""
+        if target_id and target_id != 'desktop' and _orig_drag:
+            return _orig_drag(target_id=target_id, start_point=start_point, end_point=end_point, button=button, duration_ms=duration_ms, consume_frame=consume_frame, guard_input=guard_input)
         import time
         if button not in _BTN_FLAGS:
             raise ValueError('button must be left, right, or middle')
@@ -275,9 +305,11 @@ def main():
 
         return _with_dpi_awareness(_do)
 
-    @server.tool(name='DesktopScroll')
-    def desktop_scroll(dx: int = 0, dy: int = 0, point: list[int] | None = None):
-        """Scroll vertically or horizontally anywhere on the guest desktop."""
+    @server.tool(name='scroll')
+    def unified_scroll(dx: int = 0, dy: int = 0, target_id: str = '', point: list[int] | None = None, consume_frame: bool = True, guard_input: bool = True):
+        """Scroll vertically or horizontally on the full desktop (default) or inside target_id window."""
+        if target_id and target_id != 'desktop' and _orig_scroll:
+            return _orig_scroll(target_id=target_id, dx=dx, dy=dy, point=point, consume_frame=consume_frame, guard_input=guard_input)
 
         def _do(user32):
             events = []
@@ -294,6 +326,56 @@ def main():
             if events:
                 _send_mouse_events(user32, events)
             return {'outcome': 'delivered', 'target_id': 'desktop', 'dx': dx, 'dy': dy, 'point': point}
+
+        return _with_dpi_awareness(_do)
+
+    @server.tool(name='Key')
+    def unified_key(key: str, target_id: str = '', point: list[int] | None = None, element_token: str | None = None):
+        """Send a key or key chord (e.g. 'enter', 'ctrl+c') desktop-wide (default) or to target_id window."""
+        if target_id and target_id != 'desktop' and _orig_key:
+            return _orig_key(target_id=target_id, key=key, point=point, element_token=element_token)
+        parts = [p.strip().lower() for p in key.split('+') if p.strip()]
+        if not parts:
+            raise ValueError('key must be non-empty')
+
+        def _resolve_vk(tok):
+            if tok in _VK_MAP:
+                return _VK_MAP[tok]
+            if len(tok) == 1:
+                vk = ctypes.WinDLL('user32').VkKeyScanW(ord(tok)) & 0xFF
+                if vk != 0xFF:
+                    return vk
+            raise ValueError(f'Unsupported key: {tok}')
+
+        import ctypes
+        vks = [_resolve_vk(p) for p in parts]
+
+        def _do(user32):
+            if point is not None:
+                unified_click(point=point)
+            events = [(vk, 0, 0) for vk in vks] + [(vk, 0, 0x0002) for vk in reversed(vks)]
+            _send_key_events(user32, events)
+            return {'outcome': 'delivered', 'target_id': 'desktop', 'key': key}
+
+        return _with_dpi_awareness(_do)
+
+    @server.tool(name='Type')
+    def unified_type(text: str, target_id: str = '', element_token: str | None = None, point: list[int] | None = None, clear: bool = True):
+        """Type Unicode text desktop-wide (default) or into target_id window."""
+        if target_id and target_id != 'desktop' and _orig_type:
+            return _orig_type(target_id=target_id, text=text, element_token=element_token, point=point, clear=clear)
+
+        def _do(user32):
+            if point is not None:
+                unified_click(point=point)
+            events = []
+            for ch in text:
+                code = ord(ch)
+                events.append((0, code, 0x0004))
+                events.append((0, code, 0x0004 | 0x0002))
+            if events:
+                _send_key_events(user32, events)
+            return {'outcome': 'delivered', 'target_id': 'desktop', 'length': len(text)}
 
         return _with_dpi_awareness(_do)
 

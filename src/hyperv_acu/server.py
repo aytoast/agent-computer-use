@@ -129,7 +129,7 @@ async def _capture_target(client,vm_id:str,target_id:str='',should_auto_confirm:
     _captures.pop(vm_id,None)
     norm=_norm_target(target_id)
     if norm=='desktop':
-        result=await client.call_tool('DesktopScreenshot',{})
+        result=await client.call_tool('HyperVDesktopScreenshot',{})
     else:
         windows=(await client.call_tool('WindowList',{'title':''})).data
         if not isinstance(windows,list):raise RuntimeError('Guest window list is unavailable')
@@ -284,10 +284,8 @@ async def _dispatch_click(client,target_id:str,capture:dict,x:int,y:int,coordina
     _validate_button(button)
     _validate_clicks(clicks)
     point=_resolve_point(x,y,coordinate_space,capture)
-    if _norm_target(target_id)=='desktop':
-        return (await client.call_tool('DesktopClick',{'point':point,'button':button,'clicks':clicks})).content
     return (await client.call_tool('click',{
-        'target_id':target_id,'point':point,'button':button,'clicks':clicks,
+        'target_id':_norm_target(target_id),'point':point,'button':button,'clicks':clicks,
         'consume_frame':should_consume_frame,'guard_input':should_guard_input,
     })).content
 
@@ -296,10 +294,8 @@ async def _dispatch_move(client,target_id:str,capture:dict,x:int,y:int,coordinat
     if type(hover_ms) is not int or not 0<=hover_ms<=30000:
         raise ValueError('hover_ms must be an integer between 0 and 30000')
     point=_resolve_point(x,y,coordinate_space,capture)
-    if _norm_target(target_id)=='desktop':
-        return (await client.call_tool('DesktopMove',{'point':point,'hover_ms':hover_ms})).content
     return (await client.call_tool('move',{
-        'target_id':target_id,'point':point,'hover_ms':hover_ms,
+        'target_id':_norm_target(target_id),'point':point,'hover_ms':hover_ms,
         'consume_frame':should_consume_frame,'guard_input':should_guard_input,
     })).content
 
@@ -310,10 +306,8 @@ async def _dispatch_drag(client,target_id:str,capture:dict,start_x:int,start_y:i
         raise ValueError('duration_ms must be an integer between 0 and 10000')
     start_point=_resolve_point(start_x,start_y,coordinate_space,capture)
     end_point=_resolve_point(end_x,end_y,coordinate_space,capture)
-    if _norm_target(target_id)=='desktop':
-        return (await client.call_tool('DesktopDrag',{'start_point':start_point,'end_point':end_point,'button':button,'duration_ms':duration_ms})).content
     return (await client.call_tool('drag',{
-        'target_id':target_id,'start_point':start_point,'end_point':end_point,
+        'target_id':_norm_target(target_id),'start_point':start_point,'end_point':end_point,
         'button':button,'duration_ms':duration_ms,'consume_frame':should_consume_frame,'guard_input':should_guard_input,
     })).content
 
@@ -325,10 +319,8 @@ async def _dispatch_scroll(client,target_id:str,capture:dict|None,delta:int,poin
         if x is None or y is None:raise ValueError('Both x and y are required when scrolling at a position')
         if not capture:raise ValueError('A fresh screenshot of this exact target is required')
         resolved_point=_resolve_point(x,y,coordinate_space,capture)
-    if _norm_target(target_id)=='desktop':
-        return (await client.call_tool('DesktopScroll',{'dx':dx,'dy':dy,'point':resolved_point})).content
     return (await client.call_tool('scroll',{
-        'target_id':target_id,'dx':dx,'dy':dy,'point':resolved_point,
+        'target_id':_norm_target(target_id),'dx':dx,'dy':dy,'point':resolved_point,
         'consume_frame':should_consume_frame,'guard_input':should_guard_input,
     })).content
 
@@ -384,23 +376,27 @@ async def focus_window(vm_id:str,target_id:str):
 
 
 @server.tool(name='key')
-async def key(vm_id:str,target_id:str,key:str,point:list[int]|None=None,element_token:str|None=None):
+async def key(vm_id:str,key:str,target_id:str='',point:list[int]|None=None,element_token:str|None=None):
+    """Send a key or key chord desktop-wide (default) or to target_id window."""
     require_vm(vm_id)
+    norm=_norm_target(target_id)
     async with _lock,connection() as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
-        require_capture(_captures.pop(vm_id,None),target_id,time.monotonic())
-        return (await client.call_tool('Key',{'target_id':target_id,'key':key,'point':point,'element_token':element_token})).content
+        require_capture(_captures.pop(vm_id,None),norm,time.monotonic())
+        return (await client.call_tool('Key',{'target_id':norm,'key':key,'point':point,'element_token':element_token})).content
 
 
 @server.tool(name='type')
-async def type_text(vm_id:str,target_id:str,text:str,element_token:str|None=None,point:list[int]|None=None,clear:bool=True):
+async def type_text(vm_id:str,text:str,target_id:str='',element_token:str|None=None,point:list[int]|None=None,clear:bool=True):
+    """Type Unicode text desktop-wide (default) or into target_id window."""
     require_vm(vm_id)
+    norm=_norm_target(target_id)
     async with _lock,connection() as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
-        require_capture(_captures.pop(vm_id,None),target_id,time.monotonic())
-        return (await client.call_tool('Type',{'target_id':target_id,'text':text,'element_token':element_token,'point':point,'clear':clear})).content
+        require_capture(_captures.pop(vm_id,None),norm,time.monotonic())
+        return (await client.call_tool('Type',{'target_id':norm,'text':text,'element_token':element_token,'point':point,'clear':clear})).content
 
 
 @server.tool(name='scroll')
@@ -499,8 +495,8 @@ async def _execute_batch_step(client,vm_id:str,target_id:str,capture:dict,item:d
 
 
 @server.tool(name='batch')
-async def batch(vm_id:str,target_id:str,actions:list[dict],stop_on_error:bool=True,task:str|None=None,step:str|None=None,should_complete_task:bool=False,observed_result:str|None=None):
-    """Execute a sequence of guest actions (click, double_click, move, drag, scroll, key, type, wait, screenshot, task_context) on target_id window or ''/'desktop' for full desktop."""
+async def batch(vm_id:str,actions:list[dict],target_id:str='',stop_on_error:bool=True,task:str|None=None,step:str|None=None,should_complete_task:bool=False,observed_result:str|None=None):
+    """Execute a sequence of guest actions (click, double_click, move, drag, scroll, key, type, wait, screenshot, task_context) desktop-wide (default) or scoped to target_id."""
     require_vm(vm_id)
     norm=_norm_target(target_id)
     if not isinstance(actions,list) or not 1<=len(actions)<=50:

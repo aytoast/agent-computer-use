@@ -103,7 +103,7 @@ class NewToolsValidationTest(unittest.TestCase):
         with patch.object(server,'connection',return_value=FakeClient()), \
              patch.object(server.input_guard,'require_clear'):
             batch_res=asyncio.run(server.batch(
-                server.VM_ID,'win1',
+                server.VM_ID,
                 [
                     {'action':'move','x':100,'y':200,'hover_ms':10},
                     {'action':'double_click','x':100,'y':200,'button':'right','seconds':0.01},
@@ -111,6 +111,7 @@ class NewToolsValidationTest(unittest.TestCase):
                     {'action':'scroll','delta':-120,'direction':'horizontal','x':30,'y':40},
                     {'action':'wait','seconds':0.01},
                 ],
+                target_id='win1',
             ))
             self.assertEqual(batch_res['completed'],5)
             ps_res=asyncio.run(server.exec_powershell(server.VM_ID,'Write-Output hi',timeout_seconds=10))
@@ -139,8 +140,9 @@ class NewToolsValidationTest(unittest.TestCase):
              patch.object(server.input_guard,'start'), \
              patch.object(server.input_guard,'finish'):
             res=asyncio.run(server.batch(
-                server.VM_ID,'game1',
+                server.VM_ID,
                 [{'action':'click','x':100,'y':200},{'action':'wait','seconds':0.01}],
+                target_id='game1',
                 task='Test task',should_complete_task=True,
             ))
         self.assertFalse(res['ok'])
@@ -155,7 +157,7 @@ class NewToolsValidationTest(unittest.TestCase):
             async def call_tool(self,name,args):
                 calls.append((name,args))
                 if name=='AgentStatus':return SimpleNamespace(data={'paused':False,'task_active':True},content=[])
-                if name=='DesktopScreenshot':
+                if name=='HyperVDesktopScreenshot':
                     return SimpleNamespace(content=[
                         SimpleNamespace(type='text',text=json.dumps({'target_id':'desktop','width':1920,'height':1080})),
                         SimpleNamespace(type='image'),
@@ -168,11 +170,15 @@ class NewToolsValidationTest(unittest.TestCase):
             asyncio.run(server.click(server.VM_ID,500,500,coordinate_space='normalized_1000'))
             asyncio.run(server.screenshot(server.VM_ID))
             asyncio.run(server.drag(server.VM_ID,10,20,300,400))
+            asyncio.run(server.screenshot(server.VM_ID))
+            asyncio.run(server.type_text(server.VM_ID,'hello'))
         tool_names=[name for name,_ in calls]
-        self.assertEqual(tool_names.count('DesktopScreenshot'),2)
-        self.assertIn('DesktopClick',tool_names)
-        self.assertIn('DesktopDrag',tool_names)
-        click_args=next(args for name,args in calls if name=='DesktopClick')
+        self.assertEqual(tool_names.count('HyperVDesktopScreenshot'),3)
+        self.assertIn('click',tool_names)
+        self.assertIn('drag',tool_names)
+        self.assertIn('Type',tool_names)
+        click_args=next(args for name,args in calls if name=='click')
+        self.assertEqual(click_args['target_id'],'desktop')
         self.assertEqual(click_args['point'],[960,540])
 
     def test_ensure_vm_thumbnail_deduplicates_per_vm(self):

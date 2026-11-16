@@ -63,15 +63,16 @@ powershell -ExecutionPolicy Bypass -File scripts\deploy-guest.ps1
 ## Safety guardrails
 
 - **Zero host risk**: Agents operate strictly inside the configured Hyper-V VM (`vm_id` + MAC-verified private IP).
-- **Mandatory visual verification**: Every input requires a fresh screenshot of the target window and post-action verification.
+- **Mandatory visual verification**: Every input requires a fresh screenshot (full desktop by default, or optional `target_id` window) and post-action verification.
 - **Human-takeover safe**: Automatically refuses input when the host or guest user is active or the agent is paused.
 - **Crash-safe state**: Single-action lock (`runtime/hyperv-input-block.json`) blocks further input after uncertain outcomes until reviewed.
 
 ## Available MCP tools
 
 - **Discovery**: `list_vms`, `agent_status`, `list_windows`
-- **Observation**: `screenshot`, `window_snapshot`
-- **Input**: `click`, `double_click`, `move`, `drag`, `scroll`, `key`, `type`, `wait`, `batch`
+- **Observation**: `screenshot` (full desktop by default, including visible `windows` coordinates relative to `(0, 0)`, or pass `target_id`), `window_snapshot`
+- **Input (desktop-wide by default, optional `target_id`)**: `click`, `move`, `drag`, `scroll`, `key`, `type`, `wait`, `batch`
+- **VM lifecycle**: `create_vm`, `destroy_vm`, `start_vm`, `stop_vm`, `checkpoint_vm`, `restore_vm`
 - **Execution**: `focus_window`, `exec_powershell`
 
 ## Project layout
