@@ -19,10 +19,10 @@ try {
     $cred=New-Object System.Management.Automation.PSCredential($guestUser,$pw)
     $session=New-PSSession -VMId $vm.Id -Credential $cred -ErrorAction Stop
     $files=@(
-        @{src='guest\vm_agent_server.py';    dst='vm-agent-server.py'}
-        @{src='guest\vm_universal.py';       dst='app\windows_agent\vm_universal.py'}
-        @{src='guest\hyperv_frame.py';       dst='app\windows_agent\hyperv_frame.py'}
-        @{src='guest\hyperv_game_capture.py';dst='app\windows_agent\hyperv_game_capture.py'}
+        @{src='guest\agent_server.py'; dst='vm-agent-server.py'}
+        @{src='guest\universal.py';    dst='app\windows_agent\vm_universal.py'}
+        @{src='guest\frame.py';        dst='app\windows_agent\hyperv_frame.py'}
+        @{src='guest\game_capture.py'; dst='app\windows_agent\hyperv_game_capture.py'}
     )
     $manifest=@()
     foreach($f in $files){

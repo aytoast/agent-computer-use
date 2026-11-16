@@ -1,6 +1,6 @@
 import unittest
 from types import SimpleNamespace
-import hyperv_game_capture as capture
+import game_capture as capture
 
 class CaptureGuardTest(unittest.TestCase):
     def test_valid_foreground_window_bounds(self):

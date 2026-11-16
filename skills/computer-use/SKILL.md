@@ -1,9 +1,9 @@
 ---
-name: vm-desktop-use
-description: Operate an isolated Hyper-V Windows VM desktop through the hyperv-computer-use MCP server (`list_vms`, `screenshot`, `click`, `move`, `drag`, `scroll`, `key`, `type`, `batch`, `exec_powershell`). Use when automating apps, browsers, or OS tasks inside a sandboxed VM.
+name: computer-use
+description: Operate an isolated Windows desktop through the computer-use MCP server (`list_vms`, `screenshot`, `click`, `move`, `drag`, `scroll`, `key`, `type`, `batch`, `exec_powershell`). Use when automating apps, browsers, or OS tasks inside a sandbox.
 ---
 
-# VM Desktop Use
+# Computer Use
 
 ## Core Rules
 - Operate strictly inside the target Hyper-V VM (`vm_id`); never touch the host desktop.

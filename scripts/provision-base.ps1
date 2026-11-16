@@ -40,10 +40,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command "
   New-Item -ItemType Directory -Path '$guestRoot\app\windows_agent' -Force | Out-Null;
   `$srcDrive = (Get-Volume -FileSystemLabel 'UNATTEND' -ErrorAction SilentlyContinue | Select-Object -First 1).DriveLetter + ':';
   if (`$srcDrive -ne ':') {
-    Copy-Item "`$srcDrive\guest\vm_agent_server.py" '$guestRoot\vm-agent-server.py' -Force;
-    Copy-Item "`$srcDrive\guest\vm_universal.py" '$guestRoot\app\windows_agent\vm_universal.py' -Force;
-    Copy-Item "`$srcDrive\guest\hyperv_frame.py" '$guestRoot\app\windows_agent\hyperv_frame.py' -Force;
-    Copy-Item "`$srcDrive\guest\hyperv_game_capture.py" '$guestRoot\app\windows_agent\hyperv_game_capture.py' -Force;
+    Copy-Item "`$srcDrive\guest\agent_server.py" '$guestRoot\vm-agent-server.py' -Force;
+    Copy-Item "`$srcDrive\guest\universal.py" '$guestRoot\app\windows_agent\vm_universal.py' -Force;
+    Copy-Item "`$srcDrive\guest\frame.py" '$guestRoot\app\windows_agent\hyperv_frame.py' -Force;
+    Copy-Item "`$srcDrive\guest\game_capture.py" '$guestRoot\app\windows_agent\hyperv_game_capture.py' -Force;
   };
   if (Get-Command winget -ErrorAction SilentlyContinue) {
     winget install -e --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements;

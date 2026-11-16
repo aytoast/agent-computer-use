@@ -494,8 +494,8 @@ def install(server,agent):
         import json
         import time
         from fastmcp.utilities.types import Image
-        from hyperv_frame import capture_tracked
-        from hyperv_game_capture import capture_game
+        from frame import capture_tracked
+        from game_capture import capture_game
         if region is not None:
             res=agent.capture(target_id,region)
             return res if res.get('ok') is False else [json.dumps({k:v for k,v in res.items() if k!='png'}),Image(data=res['png'],format='png')]
@@ -507,7 +507,7 @@ def install(server,agent):
         """Capture the full guest virtual screen without disturbing input or focus."""
         import json
         from fastmcp.utilities.types import Image
-        from hyperv_game_capture import capture_desktop
+        from game_capture import capture_desktop
         with agent.lock:
             if agent.state.paused:raise ValueError('Guest agent is paused')
             metadata,png=capture_desktop()

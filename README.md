@@ -26,7 +26,7 @@ Cloud agent sandboxes work by cloning a clean base disk (copy-on-write), booting
 | :--- | :--- | :--- |
 | **Hypervisor & Disks** | Windows Hyper-V + Differencing VHDX | Native Type-1 hypervisor built into Windows Pro/Enterprise; copy-on-write VHDX clones boot fast and tear down cleanly with zero cloud cost. |
 | **Host <-> Guest Transport** | Hyper-V Default Switch + MAC-verified IP + PowerShell Direct | Resolves each VM exclusively by its static virtual MAC address over the private Hyper-V switch—no exposed LAN/WAN ports. |
-| **MCP Protocol & Input** | FastMCP + Python + Win32 `SendInput` / `ImageGrab` | Stdio MCP server on the host (`hyperv-acu`) proxies to an authenticated HTTP FastMCP server (`vm_agent_server.py`) inside each guest VM. |
+| **MCP Protocol & Input** | FastMCP + Python + Win32 `SendInput` / `ImageGrab` | Stdio MCP server on the host (`computer-use`) proxies to an authenticated HTTP FastMCP server (`agent_server.py`) inside each guest VM. |
 | **Host Preview** | Native DWM Thumbnail (`DwmRegisterThumbnail`) | Hardware-composited live PiP overlay (`pip_thumbnail.py`) with auto-hide notch mode for every VM with guest MCP online. |
 
 ## Quickstart (IDE-driven)
@@ -45,13 +45,13 @@ From there, your IDE or AI agent drives VM provisioning and lifecycle directly t
 <details>
 <summary>Manual per-IDE MCP registration snippets</summary>
 
-- **Claude Code**: `claude mcp add -s user hyperv-computer-use -- python -B -u src/hyperv_acu/server.py`
+- **Claude Code**: `claude mcp add -s user computer-use -- python -B -u src/hyperv_acu/server.py`
 - **Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`), **Cursor** (`~/.cursor/mcp.json`), **Antigravity** (`~/.gemini/config/mcp_config.json`):
 
 ```json
 {
   "mcpServers": {
-    "hyperv-computer-use": {
+    "computer-use": {
       "command": "python",
       "args": ["-B", "-u", "C:/path/to/agent-computer-use/src/hyperv_acu/server.py"]
     }
@@ -62,12 +62,12 @@ From there, your IDE or AI agent drives VM provisioning and lifecycle directly t
 - **Codex** (`~/.codex/config.toml`):
 
 ```toml
-[mcp_servers.hyperv-computer-use]
+[mcp_servers.computer-use]
 command = "python"
 args = ["-B", "-u", "C:/path/to/agent-computer-use/src/hyperv_acu/server.py"]
 ```
 
-- **ChatGPT (OpenAI tunnel)**: copy `tunnel/hyperv.yaml.example` to `tunnel/hyperv.yaml` and run `scripts\connect-tunnel.ps1`.
+- **ChatGPT / Codex tunnel**: copy `.codex-plugin/tunnel.yaml.example` to `.codex-plugin/tunnel/hyperv.yaml` and run `scripts\connect-tunnel.ps1`.
 
 </details>
 
@@ -91,11 +91,12 @@ All observation and input tools operate **desktop-wide by default** (full guest 
 ## Project layout
 
 - `src/hyperv_acu/`: host MCP server, guest proxy, VM pool, policy/input guards, DWM PiP overlay
-- `guest/`: guest-side FastMCP server (`vm_agent_server.py`) and Win32 capture/input modules
+- `guest/`: guest-side FastMCP server (`agent_server.py`) and Win32 capture/input modules
+- `skills/`: agent skills (`computer-use`, `sandbox-lifecycle`)
 - `config/`: `settings.json` defaults and `settings.example.json` (local overrides in gitignored `settings.local.json`)
 - `scripts/`: `setup.ps1`, `install-mcp.ps1`, `provision-base.ps1`, `deploy-guest.ps1`, `admin-broker.ps1`, `admin-request.ps1`
 - `tests/`: unit test suite (`python -m unittest discover -s tests -t .`)
-- `tunnel/`: OpenAI tunnel config template (`hyperv.yaml.example`)
+- `.codex-plugin/`: Codex plugin manifest + OpenAI tunnel config template (`tunnel.yaml.example`)
 
 ## FAQ
 

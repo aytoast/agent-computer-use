@@ -1,9 +1,9 @@
 ---
-name: vm-sandbox-lifecycle
-description: Provision, clone, checkpoint, restore, and destroy isolated Hyper-V Agent VMs via the hyperv-computer-use MCP server. Use when spinning up a clean Windows sandbox, snapshotting before risky actions, or tearing down ephemeral VMs.
+name: sandbox-lifecycle
+description: Provision, clone, checkpoint, restore, and destroy isolated Windows sandboxes via the computer-use MCP server. Use when spinning up a clean sandbox, snapshotting before risky actions, or tearing down ephemeral instances.
 ---
 
-# VM Sandbox Lifecycle
+# Sandbox Lifecycle
 
 ## When to Use Ephemeral vs Persistent VMs
 - **Ephemeral (`mode="ephemeral"`)**: one-off tasks, untrusted code/installers, clean-room testing. Destroy with `destroy_vm(vm_id)` when finished.

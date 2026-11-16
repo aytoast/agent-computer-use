@@ -1,6 +1,6 @@
 param(
     [string]$Clients = 'all',
-    [string]$ServerName = 'hyperv-computer-use',
+    [string]$ServerName = 'computer-use',
     [string]$PythonExe = '',
     [switch]$DryRun
 )

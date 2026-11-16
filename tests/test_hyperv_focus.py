@@ -1,4 +1,4 @@
-import vm_universal as module
+import universal as module
 
 class Backend:
     def __init__(self):

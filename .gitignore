@@ -7,5 +7,5 @@ __pycache__/
 *.egg-info/
 runtime/*
 !runtime/.gitkeep
-tunnel/*.yaml
-tunnel/health-*.url
+.codex-plugin/tunnel/*.yaml
+.codex-plugin/tunnel/health-*.url

@@ -124,7 +124,7 @@ if (-not (Test-Path -LiteralPath $envPath) -and (Test-Path -LiteralPath $envExam
 $serverScript = Join-Path $rootDir 'src\hyperv_acu\server.py'
 $mcpConfig = [ordered]@{
     mcpServers = [ordered]@{
-        'hyperv-computer-use' = [ordered]@{
+        'computer-use' = [ordered]@{
             command = $PythonExe
             args    = @('-B', '-u', $serverScript)
         }

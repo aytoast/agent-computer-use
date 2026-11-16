@@ -4,7 +4,7 @@ $rootDir=Split-Path -Parent $PSScriptRoot
 . (Join-Path $PSScriptRoot 'guest-env.ps1')
 $settings=Get-HyperVSettings -RootDir $rootDir
 $client=[string]$settings['tunnel_client_exe']
-$profileDir=Join-Path $rootDir 'tunnel'
+$profileDir=Join-Path $rootDir '.codex-plugin\tunnel'
 $profile='hyperv'
 $serverPath=(Join-Path $rootDir 'src\hyperv_acu\server.py') -replace '\\','/'
 $pythonExe=([string]$settings['python_exe']) -replace '\\','/'

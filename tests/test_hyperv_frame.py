@@ -1,7 +1,7 @@
 import unittest
 from threading import RLock
 from types import SimpleNamespace
-import hyperv_frame as frame
+import frame as frame
 
 class FrameTests(unittest.TestCase):
     def agent(self, identities, paused=False):
