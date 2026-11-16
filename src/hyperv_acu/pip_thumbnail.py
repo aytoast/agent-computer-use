@@ -587,7 +587,11 @@ class PipThumbnailWindow:
 
     def _listen_udp(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        sock.bind(('127.0.0.1', self.port))
+        try:
+            sock.bind(('127.0.0.1', self.port))
+        except OSError:
+            sock.close()
+            return
         sock.settimeout(0.5)
         self._sock = sock
         while not self._stop.is_set():
@@ -744,7 +748,9 @@ class PipThumbnailWindow:
 
     def run(self):
         if self.notch:
-            self._mutex = kernel32.CreateMutexW(None, False, 'Local\\HyperVPipThumbnailSingleInstance')
+            import re
+            suffix = re.sub(r'[^A-Za-z0-9_-]+', '_', self.title_hint or 'default')
+            self._mutex = kernel32.CreateMutexW(None, False, f'Local\\HyperVPipThumbnail_{suffix}')
             if ctypes.get_last_error() == 183:
                 return
         wc = win32gui.WNDCLASS()
