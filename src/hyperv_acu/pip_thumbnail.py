@@ -614,6 +614,21 @@ class PipThumbnailWindow:
                 self._allow_close = True
                 win32gui.PostMessage(self.hwnd, win32con.WM_CLOSE, 0, 0)
 
+    def _open_vmconnect(self):
+        target = self.src_hwnd if (self.src_hwnd and win32gui.IsWindow(self.src_hwnd)) else find_vmconnect_hwnd(self.title_hint)
+        if target:
+            if win32gui.IsIconic(target):
+                win32gui.ShowWindow(target, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(target)
+            return True
+        if self.title_hint:
+            try:
+                subprocess.Popen(['vmconnect.exe', 'localhost', self.title_hint], creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                return True
+            except Exception:
+                return False
+        return False
+
     def _wndproc(self, hwnd, msg, wparam, lparam):
         if msg == win32con.WM_APP + 1:
             self._set_visible(bool(wparam))
@@ -699,10 +714,7 @@ class PipThumbnailWindow:
             x = ctypes.c_short(lparam & 0xFFFF).value
             _, _, r, _ = win32gui.GetClientRect(hwnd)
             if not self.collapsed and x < max(0, r - HANDLE_W):
-                if self.src_hwnd and win32gui.IsWindow(self.src_hwnd):
-                    if win32gui.IsIconic(self.src_hwnd):
-                        win32gui.ShowWindow(self.src_hwnd, win32con.SW_RESTORE)
-                    win32gui.SetForegroundWindow(self.src_hwnd)
+                self._open_vmconnect()
             return 0
         if msg == win32con.WM_CLOSE:
             if not self._allow_close:
@@ -754,6 +766,7 @@ class PipThumbnailWindow:
             if ctypes.get_last_error() == 183:
                 return
         wc = win32gui.WNDCLASS()
+        wc.style = win32con.CS_DBLCLKS
         wc.lpfnWndProc = self._wndproc
         wc.lpszClassName = 'HyperVPipThumbnail'
         wc.hbrBackground = win32gui.GetStockObject(win32con.BLACK_BRUSH)

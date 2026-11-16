@@ -31,6 +31,21 @@ class PipThumbnailDockTest(unittest.TestCase):
             win._guest_lost_count = 4
             self.assertTrue(win._should_auto_close())
 
+    def test_double_click_opens_or_focuses_vmconnect(self):
+        win = PipThumbnailWindow(title_hint='agent-01', notch=True)
+        with patch('hyperv_acu.pip_thumbnail.find_vmconnect_hwnd', return_value=4242), \
+             patch('hyperv_acu.pip_thumbnail.win32gui.IsIconic', return_value=True), \
+             patch('hyperv_acu.pip_thumbnail.win32gui.ShowWindow') as show_win, \
+             patch('hyperv_acu.pip_thumbnail.win32gui.SetForegroundWindow') as fg_win:
+            self.assertTrue(win._open_vmconnect())
+            show_win.assert_called_once()
+            fg_win.assert_called_once_with(4242)
+
+        with patch('hyperv_acu.pip_thumbnail.find_vmconnect_hwnd', return_value=None), \
+             patch('hyperv_acu.pip_thumbnail.subprocess.Popen') as popen:
+            self.assertTrue(win._open_vmconnect())
+            self.assertEqual(popen.call_args[0][0], ['vmconnect.exe', 'localhost', 'agent-01'])
+
 
 if __name__ == '__main__':
     unittest.main()
