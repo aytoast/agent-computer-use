@@ -64,7 +64,7 @@ All observation and input tools operate **desktop-wide by default** (with option
 - `guest/`: guest-side FastMCP server (`agent_server.py`) and Win32 capture/input modules
 - `skills/`: agent skills (`computer-use`, `sandbox-lifecycle`)
 - `config/`: `settings.json` defaults and `settings.example.json`
-- `scripts/`: `setup.ps1`, `install-mcp.ps1`, `provision-base.ps1`, `deploy-guest.ps1`, `admin-broker.ps1`
+- `scripts/`: `setup.ps1`, `install-mcp.ps1`, `deploy-guest.ps1`, `admin-broker.ps1`
 - `.codex-plugin/`: Codex plugin manifest + `tunnel.yaml.example`
 - `tests/`: unit tests (`python -m unittest discover -s tests -t .`)
 

@@ -11,6 +11,7 @@
   "tunnel_client_exe": "",
   "max_managed_vms": 4,
   "base_vhdx": "",
+  "base_vhdx_url": "",
   "vm_storage_dir": "",
   "default_switch": "Default Switch",
   "default_guest_credentials": {

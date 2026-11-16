@@ -1,0 +1,13 @@
+﻿{
+    "servers":  {
+                    "computer-use":  {
+                                         "args":  [
+                                                      "-B",
+                                                      "-u",
+                                                      "C:\\Users\\fokae\\Documents\\agent-computer-use\\src\\hyperv_acu\\server.py"
+                                                  ],
+                                         "command":  "C:\\Users\\fokae\\AppData\\Local\\WindowsAgent\\runtime-v1\\Scripts\\python.exe",
+                                         "type":  "stdio"
+                                     }
+                }
+}

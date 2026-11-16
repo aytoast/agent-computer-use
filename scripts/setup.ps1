@@ -10,6 +10,7 @@ param(
     [string]$InstallClients = '',
     [switch]$CreateVm,
     [string]$BaseVhdx = '',
+    [string]$BaseVhdxUrl = '',
     [ValidateSet('ephemeral', 'persistent')][string]$Mode = 'persistent',
     [int]$MemoryGB = 4,
     [int]$CpuCount = 2,
@@ -24,17 +25,42 @@ if (-not $PythonExe) {
     $PythonExe = if ($pyCmd) { $pyCmd.Source } else { 'python' }
 }
 
-if ($CreateVm -or $BaseVhdx) {
-    if (-not $VmName) { $VmName = 'Agent-VM-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
-    if (-not $BaseVhdx) {
-        $cfgPath = Join-Path $rootDir 'config\settings.local.json'
-        if (-not (Test-Path -LiteralPath $cfgPath)) { $cfgPath = Join-Path $rootDir 'config\settings.json' }
-        if (Test-Path -LiteralPath $cfgPath) {
-            $cfg = Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json
-            if ($cfg.base_vhdx) { $BaseVhdx = [string]$cfg.base_vhdx }
-        }
+$cfgPath = Join-Path $rootDir 'config\settings.local.json'
+if (-not (Test-Path -LiteralPath $cfgPath)) { $cfgPath = Join-Path $rootDir 'config\settings.json' }
+$cfg = if (Test-Path -LiteralPath $cfgPath) { Get-Content -LiteralPath $cfgPath -Raw | ConvertFrom-Json } else { $null }
+if (-not $BaseVhdx -and $cfg -and $cfg.base_vhdx) { $BaseVhdx = [string]$cfg.base_vhdx }
+if (-not $BaseVhdxUrl) {
+    if ($env:HYPERV_BASE_VHDX_URL) { $BaseVhdxUrl = [string]$env:HYPERV_BASE_VHDX_URL }
+    elseif ($cfg -and $cfg.base_vhdx_url) { $BaseVhdxUrl = [string]$cfg.base_vhdx_url }
+}
+
+if ($BaseVhdxUrl -and (-not $BaseVhdx -or -not (Test-Path -LiteralPath $BaseVhdx))) {
+    if (-not $BaseVhdx) { $BaseVhdx = 'C:\HyperV\Base\win11-agent-base.vhdx' }
+    $baseDir = Split-Path -Parent $BaseVhdx
+    New-Item -ItemType Directory -Path $baseDir -Force | Out-Null
+    $isZip = $BaseVhdxUrl -match '\.zip(\?.*)?$'
+    $partPath = if ($isZip) { "$BaseVhdx.zip.part" } else { "$BaseVhdx.part" }
+    Write-Host "Downloading base image from $BaseVhdxUrl..."
+    Invoke-WebRequest -Uri $BaseVhdxUrl -OutFile $partPath -UseBasicParsing
+    if ($isZip) {
+        $extractDir = Join-Path $baseDir '_extract'
+        Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
+        Expand-Archive -LiteralPath $partPath -DestinationPath $extractDir -Force
+        $vhdxFound = Get-ChildItem -Path $extractDir -Filter '*.vhdx' -Recurse | Select-Object -First 1
+        if (-not $vhdxFound) { throw 'Downloaded zip archive does not contain a .vhdx file.' }
+        Move-Item -LiteralPath $vhdxFound.FullName -Destination $BaseVhdx -Force
+        Remove-Item -Recurse -Force $extractDir, $partPath -ErrorAction SilentlyContinue
+    } else {
+        Move-Item -LiteralPath $partPath -Destination $BaseVhdx -Force
     }
-    if (-not $BaseVhdx) { throw 'Pass -BaseVhdx <path> or set base_vhdx in config\settings.local.json to create a VM.' }
+    Write-Host "Saved base image to $BaseVhdx"
+}
+
+if ($CreateVm) {
+    if (-not $VmName) { $VmName = 'Agent-VM-' + (Get-Date -Format 'yyyyMMdd-HHmmss') }
+    if (-not $BaseVhdx -or -not (Test-Path -LiteralPath $BaseVhdx)) {
+        throw 'Pass -BaseVhdx <path>, -BaseVhdxUrl <url>, or set base_vhdx / base_vhdx_url in config\settings.local.json.'
+    }
 
     $payload = @{
         name      = $VmName

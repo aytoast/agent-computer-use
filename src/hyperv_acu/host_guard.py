@@ -20,7 +20,12 @@ def read_host_state():
     import win32process
 
     foreground=win32gui.GetForegroundWindow()
-    if not foreground:raise OSError('Host foreground window is unavailable')
+    if not foreground:
+        user=ctypes.WinDLL('user32',use_last_error=True)
+        desktop=user.OpenInputDesktop(0,False,0x0001)
+        if not desktop:raise OSError('Host foreground window is unavailable')
+        user.CloseDesktop(desktop)
+        return {'vm_foreground':False,'foreground':0}
     _,pid=win32process.GetWindowThreadProcessId(foreground)
     try:vm_foreground=psutil.Process(pid).name().lower()=='vmconnect.exe'
     except (psutil.Error,OSError):raise OSError('Host foreground process is unavailable') from None
