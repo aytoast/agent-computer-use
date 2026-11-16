@@ -898,7 +898,19 @@ def notify_show(port: int = DEFAULT_PORT):
         pass
 
 
+def _enable_dpi_awareness():
+    fn = getattr(user32, 'SetProcessDpiAwarenessContext', None)
+    if fn:
+        fn.argtypes = [wintypes.HANDLE]
+        fn.restype = wintypes.BOOL
+        if fn(ctypes.c_void_p(-4)):
+            return
+    if hasattr(user32, 'SetProcessDPIAware'):
+        user32.SetProcessDPIAware()
+
+
 def main():
+    _enable_dpi_awareness()
     parser = argparse.ArgumentParser(description='Native DWM PiP thumbnail for Hyper-V vmconnect.exe')
     parser.add_argument('--width', type=int, default=320)
     parser.add_argument('--height', type=int, default=180)
