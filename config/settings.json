@@ -1,0 +1,25 @@
+{
+  "vm_id": "",
+  "vm_mac": "",
+  "vm_name": "Agent-VM",
+  "guest_port": 18777,
+  "guest_user": "agent",
+  "guest_root": "C:\\Users\\Agent\\WindowsAgent",
+  "guest_task_name": "HyperV-VM-Agent",
+  "pipe_prefix": "HyperVAgent-Broker-",
+  "python_exe": "python",
+  "tunnel_client_exe": "",
+  "max_managed_vms": 4,
+  "base_vhdx": "",
+  "vm_storage_dir": "",
+  "default_switch": "Default Switch",
+  "default_guest_credentials": {
+    "username": "agent",
+    "password": "123456",
+    "security_questions": {
+      "city_born": "new york",
+      "oldest_cousin": "john",
+      "parents_met": "washington dc"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "agent-computer-use",
+  "version": "0.1.0",
+  "description": "Hyper-V VM desktop automation via hyperv-local MCP server.",
+  "author": {
+    "name": "aytoast"
+  },
+  "skills": "./skills/",
+  "keywords": [
+    "hyperv",
+    "desktop",
+    "automation",
+    "mcp"
+  ],
+  "interface": {
+    "displayName": "agent-computer-use",
+    "shortDescription": "Hyper-V VM desktop MCP server.",
+    "longDescription": "Universal Hyper-V VM desktop automation with dynamic screenshot capture, input guards, batch actions, PowerShell execution, and notch live thumbnail.",
+    "developerName": "aytoast",
+    "category": "productivity",
+    "capabilities": [
+      "read",
+      "write"
+    ],
+    "defaultPrompt": [
+      "List Hyper-V VMs and inspect the active guest window."
+    ]
+  }
+}

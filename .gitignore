@@ -1,0 +1,11 @@
+.env
+.mcp.json
+config/settings.local.json
+__pycache__/
+*.pyc
+.pytest_cache/
+*.egg-info/
+runtime/*
+!runtime/.gitkeep
+tunnel/*.yaml
+tunnel/health-*.url

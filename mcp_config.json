@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "hyperv-local": {
+      "command": "python",
+      "args": [
+        "-B",
+        "-u",
+        "src/hyperv_acu/server.py"
+      ],
+      "disabled": false
+    }
+  }
+}
