@@ -504,10 +504,6 @@ class PipThumbnailWindow:
                             res = None
                             if 'HyperVDesktopScreenshot' in tools:
                                 res = await client.call_tool('HyperVDesktopScreenshot', {})
-                            else:
-                                windows = (await client.call_tool('WindowList', {'title': ''})).data
-                                if isinstance(windows, list) and windows:
-                                    res = await client.call_tool('Screenshot', {'target_id': windows[0]['target_id']})
                             if res is not None:
                                 png_bytes = None
                                 for item in res.content:
