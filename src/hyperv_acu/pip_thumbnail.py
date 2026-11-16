@@ -27,6 +27,7 @@ _VM_SETUP = ensure_paths()
 
 
 DWM_TNP_RECTDESTINATION = 0x00000001
+DWM_TNP_RECTSOURCE = 0x00000002
 DWM_TNP_OPACITY = 0x00000004
 DWM_TNP_VISIBLE = 0x00000008
 DWM_TNP_SOURCECLIENTAREAONLY = 0x00000010
@@ -154,6 +155,55 @@ def find_notch_rect() -> tuple[int, int, int, int] | None:
     return found[0] if found else None
 
 
+def find_vmconnect_screen_rect(hwnd: int) -> tuple[int, int, int, int] | None:
+    """Return client-relative (left, top, right, bottom) of vmconnect's inner VM display surface."""
+    if not hwnd or not win32gui.IsWindow(hwnd):
+        return None
+    try:
+        _, _, cw, ch = win32gui.GetClientRect(hwnd)
+    except Exception:
+        return None
+    if cw <= 0 or ch <= 0:
+        return None
+    client_area = cw * ch
+    preferred: list[tuple[int, tuple[int, int, int, int]]] = []
+    candidates: list[tuple[int, tuple[int, int, int, int]]] = []
+
+    def _cb(child, _):
+        if not win32gui.IsWindowVisible(child):
+            return True
+        try:
+            l, t, r, b = win32gui.GetWindowRect(child)
+            sl, st = win32gui.ScreenToClient(hwnd, (l, t))
+            sr, sb = win32gui.ScreenToClient(hwnd, (r, b))
+        except Exception:
+            return True
+        sl, st = max(0, sl), max(0, st)
+        sr, sb = min(cw, sr), min(ch, sb)
+        w, h = sr - sl, sb - st
+        area = w * h
+        if w <= 0 or h <= 0 or area < client_area * 0.4:
+            return True
+        cls = win32gui.GetClassName(child)
+        if cls in ('IHWindowClass', 'OPWindowClass', 'UIMainClass'):
+            preferred.append((area, (sl, st, sr, sb)))
+        elif area < client_area * 0.98:
+            candidates.append((area, (sl, st, sr, sb)))
+        return True
+
+    try:
+        win32gui.EnumChildWindows(hwnd, _cb, 0)
+    except Exception:
+        return None
+    if preferred:
+        preferred.sort(key=lambda item: item[0])
+        return preferred[0][1]
+    if candidates:
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        return candidates[0][1]
+    return None
+
+
 HANDLE_W = 20
 COLLAPSED_H = 72
 ANIM_TIMER_ID = 2
@@ -240,6 +290,9 @@ class PipThumbnailWindow:
 
     def _aspect_ratio(self) -> float:
         if self.thumb:
+            src_rect = find_vmconnect_screen_rect(self.src_hwnd) if self.src_hwnd else None
+            if src_rect and src_rect[2] > src_rect[0] and src_rect[3] > src_rect[1]:
+                return (src_rect[2] - src_rect[0]) / (src_rect[3] - src_rect[1])
             sz = wintypes.SIZE()
             if dwmapi.DwmQueryThumbnailSourceSize(self.thumb, ctypes.byref(sz)) == 0 and sz.cx > 0 and sz.cy > 0:
                 return sz.cx / sz.cy
@@ -437,6 +490,10 @@ class PipThumbnailWindow:
             | DWM_TNP_SOURCECLIENTAREAONLY
         )
         props.rcDestination = wintypes.RECT(left, top, right, bottom)
+        src_rect = find_vmconnect_screen_rect(self.src_hwnd) if self.src_hwnd else None
+        if src_rect:
+            props.dwFlags |= DWM_TNP_RECTSOURCE
+            props.rcSource = wintypes.RECT(*src_rect)
         props.opacity = self.opacity
         props.fVisible = True
         props.fSourceClientAreaOnly = True
