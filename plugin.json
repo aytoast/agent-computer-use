@@ -1,6 +1,6 @@
 {
   "name": "agent-computer-use",
-  "description": "Hyper-V VM desktop automation via hyperv-local MCP server, guest input/capture guards, and notch live thumbnail.",
+  "description": "Hyper-V VM desktop automation via hyperv-computer-use MCP server, guest input/capture guards, and notch live thumbnail.",
   "suggestedPrompts": [
     "List Hyper-V VMs and inspect the active guest window",
     "Take a fresh VM screenshot and interact with the desktop"
