@@ -28,7 +28,7 @@ $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH', 'Machine') + ';
 
 # 4. install pip packages
 python -m pip install --upgrade pip
-python -m pip install fastmcp mcp psutil pywin32 pillow
+python -m pip install fastmcp mcp psutil pywin32 pillow numpy
 
 # 5. create dirs
 $dir = "C:\Users\agent\WindowsAgent\app\windows_agent"
