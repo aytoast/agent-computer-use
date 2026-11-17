@@ -4,6 +4,10 @@ import os
 import sys
 
 ROOT = os.environ.get('HYPERV_GUEST_ROOT', str(Path(__file__).resolve().parent))
+if sys.stdout is None:
+    sys.stdout = open(os.path.join(ROOT, 'agent.log'), 'a', encoding='utf-8', buffering=1)
+if sys.stderr is None:
+    sys.stderr = sys.stdout
 # Windows multiprocessing imports this module again in each worker. Keep DLL
 # directories alive there, but start the MCP server only in the main process.
 import site

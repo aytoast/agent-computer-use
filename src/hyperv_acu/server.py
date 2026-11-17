@@ -671,10 +671,6 @@ async def create_vm(name:str,mode:str='ephemeral',base_vhdx:str='',memory_gb:int
     vm=reply['vm']
     record=vm_pool.register_vm(vm)
     if os.environ.get('HYPERV_DISABLE_PIP')!='1':
-        try:
-            subprocess.Popen(['vmconnect.exe','localhost',record['name']],creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
-        except Exception:
-            pass
         _ensure_vm_thumbnail(record['id'],record['name'])
     return record
 
