@@ -7,8 +7,9 @@ ROOT = os.environ.get('HYPERV_GUEST_ROOT', str(Path(__file__).resolve().parent))
 # Windows multiprocessing imports this module again in each worker. Keep DLL
 # directories alive there, but start the MCP server only in the main process.
 _DLL_DIRS = [
-    os.add_dll_directory(ROOT + r'\runtime\Scripts'),
-    os.add_dll_directory(ROOT + r'\runtime\Lib\site-packages\pywin32_system32'),
+    os.add_dll_directory(p)
+    for p in (ROOT + r'\runtime\Scripts', ROOT + r'\runtime\Lib\site-packages\pywin32_system32')
+    if os.path.isdir(p)
 ]
 sys.path.insert(0, ROOT + r'\app')
 
@@ -32,8 +33,10 @@ def main():
     from windows_agent.server import create_server
     from fastmcp.server.auth.providers.jwt import StaticTokenVerifier
 
-    with open(ROOT + r'\mcp-token.txt', encoding='utf8') as token_file:
-        token = token_file.read().strip()
+    tok_path = Path(ROOT) / 'mcp-token.txt'
+    if not tok_path.is_file():
+        tok_path = Path(ROOT) / 'guest-agent-token.txt'
+    token = tok_path.read_text(encoding='utf8').strip()
     server = create_server(False)
     from fastmcp.utilities.types import Image
     import json
