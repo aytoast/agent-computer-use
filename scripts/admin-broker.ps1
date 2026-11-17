@@ -106,7 +106,7 @@ while($true) {
                 if($targetVm.State -ne 'Off'){Stop-VM -VM $targetVm -TurnOff -Force -ErrorAction Stop}
                 Remove-VM -VM $targetVm -Force -ErrorAction Stop
                 $diff=[string]$payload.diff_vhdx
-                $storageDir=[IO.Path]::GetFullPath((if($settings['vm_storage_dir']){[string]$settings['vm_storage_dir']}else{Join-Path $rootDir 'runtime\vms'}))
+                $storageDir=[IO.Path]::GetFullPath($(if($settings['vm_storage_dir']){[string]$settings['vm_storage_dir']}else{Join-Path $rootDir 'runtime\vms'}))
                 if($diff -and (Test-Path -LiteralPath $diff)){
                     $resolvedDiff=[IO.Path]::GetFullPath($diff)
                     if(-not $resolvedDiff.StartsWith($storageDir,[StringComparison]::OrdinalIgnoreCase)){throw 'Refusing to delete disk outside vm_storage_dir.'}
