@@ -23,8 +23,8 @@ def load_settings(root: Path | None = None) -> dict:
     """Load config/settings.json merged with optional config/settings.local.json."""
     base = Path(root) if root is not None else ROOT
     settings_path = base / 'config' / 'settings.json'
-    data = json.loads(settings_path.read_text(encoding='utf-8')) if settings_path.is_file() else {}
+    data = json.loads(settings_path.read_text(encoding='utf-8-sig')) if settings_path.is_file() else {}
     local_path = base / 'config' / 'settings.local.json'
     if local_path.is_file():
-        data.update(json.loads(local_path.read_text(encoding='utf-8')))
+        data.update(json.loads(local_path.read_text(encoding='utf-8-sig')))
     return data

@@ -90,7 +90,9 @@ if ($CreateVm) {
     }
 }
 
-if ((-not $VmId -or -not $VmMac) -and (Get-Command Get-VM -ErrorAction SilentlyContinue)) {
+$settingsPath = Join-Path $rootDir 'config\settings.local.json'
+$needSettingsWrite = (-not (Test-Path -LiteralPath $settingsPath)) -or $CreateVm
+if ($needSettingsWrite -and (-not $VmId -or -not $VmMac) -and (Get-Command Get-VM -ErrorAction SilentlyContinue)) {
     try {
         $vms = @(Get-VM -ErrorAction Stop)
         if ($vms.Count -gt 0) {
@@ -137,9 +139,8 @@ $localSettings = [ordered]@{
     base_vhdx       = $BaseVhdx
 }
 
-$settingsPath = Join-Path $rootDir 'config\settings.local.json'
-if ((-not (Test-Path -LiteralPath $settingsPath)) -or $CreateVm -or $VmId) {
-    $localSettings | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $settingsPath -Encoding UTF8
+if ($needSettingsWrite) {
+    [IO.File]::WriteAllText($settingsPath, ($localSettings | ConvertTo-Json -Depth 4), [Text.UTF8Encoding]::new($false))
     Write-Host "Wrote $settingsPath"
 }
 
