@@ -187,8 +187,10 @@ def main():
         user32.EnumWindows(enum_cb(_cb), 0)
         return windows
 
+    import asyncio
+
     def _orig_tool(name):
-        t = server.get_tool(name)
+        t = asyncio.run(server.get_tool(name))
         return t.fn if t else None
 
     _orig_click = _orig_tool('click')
