@@ -6,11 +6,17 @@ import sys
 ROOT = os.environ.get('HYPERV_GUEST_ROOT', str(Path(__file__).resolve().parent))
 # Windows multiprocessing imports this module again in each worker. Keep DLL
 # directories alive there, but start the MCP server only in the main process.
-_DLL_DIRS = [
-    os.add_dll_directory(p)
-    for p in (ROOT + r'\runtime\Scripts', ROOT + r'\runtime\Lib\site-packages\pywin32_system32')
-    if os.path.isdir(p)
+import site
+
+_CANDIDATE_DLL_DIRS = [
+    ROOT + r'\runtime\Scripts',
+    ROOT + r'\runtime\Lib\site-packages\pywin32_system32',
+    ROOT + r'\runtime\Lib\site-packages\pythonwin',
+    os.path.join(sys.prefix, 'Scripts'),
 ]
+for _sp in site.getsitepackages():
+    _CANDIDATE_DLL_DIRS.extend([os.path.join(_sp, 'pywin32_system32'), os.path.join(_sp, 'pythonwin')])
+_DLL_DIRS = [os.add_dll_directory(p) for p in _CANDIDATE_DLL_DIRS if os.path.isdir(p)]
 sys.path.insert(0, ROOT + r'\app')
 
 
