@@ -20,7 +20,7 @@ def _read_dotenv(root: Path) -> dict[str, str]:
     if not env_file.is_file():
         return {}
     values: dict[str, str] = {}
-    for raw in env_file.read_text(encoding='utf-8').splitlines():
+    for raw in env_file.read_text(encoding='utf-8-sig').splitlines():
         line = raw.strip()
         if not line or line.startswith('#') or '=' not in line:
             continue
@@ -43,7 +43,7 @@ def read_guest_token(root: Path) -> str:
         path = Path(root) / path
     if not path.is_file():
         raise FileNotFoundError(f'Guest agent token file not found: {path}')
-    token = path.read_text(encoding='utf-8').strip()
+    token = path.read_text(encoding='utf-8-sig').strip()
     if not token:
         raise ValueError(f'Guest agent token file is empty: {path}')
     return token

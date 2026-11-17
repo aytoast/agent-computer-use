@@ -146,25 +146,23 @@ if ($needSettingsWrite) {
 
 $runtimeDir = Join-Path $rootDir 'runtime'
 New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+$utf8NoBom = [Text.UTF8Encoding]::new($false)
 $brokerTokPath = Join-Path $runtimeDir 'broker-token.txt'
 if (-not (Test-Path -LiteralPath $brokerTokPath)) {
-    [guid]::NewGuid().ToString('N') | Set-Content -LiteralPath $brokerTokPath -Encoding UTF8
+    [IO.File]::WriteAllText($brokerTokPath, [guid]::NewGuid().ToString('N'), $utf8NoBom)
 }
 $guestTokPath = Join-Path $runtimeDir 'guest-agent-token.txt'
 if (-not (Test-Path -LiteralPath $guestTokPath)) {
-    [guid]::NewGuid().ToString('N') | Set-Content -LiteralPath $guestTokPath -Encoding UTF8
+    [IO.File]::WriteAllText($guestTokPath, [guid]::NewGuid().ToString('N'), $utf8NoBom)
 }
 $guestPwdPath = Join-Path $runtimeDir 'guest-password.txt'
 if (-not (Test-Path -LiteralPath $guestPwdPath)) {
-    '123456' | Set-Content -LiteralPath $guestPwdPath -Encoding UTF8
+    [IO.File]::WriteAllText($guestPwdPath, '123456', $utf8NoBom)
 }
 
 $envPath = Join-Path $rootDir '.env'
 if (-not (Test-Path -LiteralPath $envPath)) {
-    @(
-        "HYPERV_GUEST_TOKEN_PATH=$guestTokPath"
-        "HYPERV_GUEST_PASSWORD_PATH=$guestPwdPath"
-    ) | Set-Content -LiteralPath $envPath -Encoding UTF8
+    [IO.File]::WriteAllText($envPath, ("HYPERV_GUEST_TOKEN_PATH=$guestTokPath`r`nHYPERV_GUEST_PASSWORD_PATH=$guestPwdPath`r`n"), $utf8NoBom)
     Write-Host "Created $envPath"
 }
 

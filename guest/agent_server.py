@@ -36,7 +36,7 @@ def main():
     tok_path = Path(ROOT) / 'mcp-token.txt'
     if not tok_path.is_file():
         tok_path = Path(ROOT) / 'guest-agent-token.txt'
-    token = tok_path.read_text(encoding='utf8').strip()
+    token = tok_path.read_text(encoding='utf-8-sig').strip()
     server = create_server(False)
     from fastmcp.utilities.types import Image
     import json
