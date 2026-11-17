@@ -322,7 +322,7 @@ async def list_windows(vm_id:str,title:str=''):
 async def screenshot(vm_id:str,target_id:str=''):
     """Capture the full guest desktop (default) or a specific target_id window."""
     require_vm(vm_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         await status_checked(client)
         result,_,_=await _capture_target(client,vm_id,target_id,should_auto_confirm=True)
         return result.content
@@ -330,7 +330,7 @@ async def screenshot(vm_id:str,target_id:str=''):
 @server.tool(name='window_snapshot',annotations={'readOnlyHint':True})
 async def window_snapshot(vm_id:str,target_id:str,include_screenshot:bool=True):
     require_vm(vm_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         return (await client.call_tool('WindowSnapshot',{'target_id':target_id,'include_screenshot':include_screenshot})).content
 
 def _resolve_point(x:int,y:int,coordinate_space:str,capture:dict)->list[int]:
@@ -413,7 +413,7 @@ async def click(vm_id:str,x:int,y:int,target_id:str='',coordinate_space:str='pix
     """Click screenshot coordinates on full desktop (default) or target_id window inside the VM."""
     require_vm(vm_id)
     norm=_norm_target(target_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         capture=_captures.pop(vm_id,None)
@@ -426,7 +426,7 @@ async def move(vm_id:str,x:int,y:int,target_id:str='',coordinate_space:str='pixe
     """Move the guest cursor to screenshot coordinates on full desktop (default) or target_id window."""
     require_vm(vm_id)
     norm=_norm_target(target_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         capture=_captures.pop(vm_id,None)
@@ -439,7 +439,7 @@ async def drag(vm_id:str,start_x:int,start_y:int,end_x:int,end_y:int,target_id:s
     """Drag the guest cursor from start to end coordinates on full desktop (default) or target_id window."""
     require_vm(vm_id)
     norm=_norm_target(target_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         capture=_captures.pop(vm_id,None)
@@ -451,7 +451,7 @@ async def drag(vm_id:str,start_x:int,start_y:int,end_x:int,end_y:int,target_id:s
 async def focus_window(vm_id:str,target_id:str):
     """Focus a guest window after checking VM user activity; never affects the host desktop."""
     require_vm(vm_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         _captures.pop(vm_id,None)
@@ -463,7 +463,7 @@ async def key(vm_id:str,key:str,target_id:str='',point:list[int]|None=None,eleme
     """Send a key or key chord desktop-wide (default) or to target_id window."""
     require_vm(vm_id)
     norm=_norm_target(target_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         require_capture(_captures.pop(vm_id,None),norm,time.monotonic())
@@ -475,7 +475,7 @@ async def type_text(vm_id:str,text:str,target_id:str='',element_token:str|None=N
     """Type Unicode text desktop-wide (default) or into target_id window."""
     require_vm(vm_id)
     norm=_norm_target(target_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         require_capture(_captures.pop(vm_id,None),norm,time.monotonic())
@@ -487,7 +487,7 @@ async def scroll(vm_id:str,delta:int=0,target_id:str='',element_token:str|None=N
     """Scroll vertically or horizontally on full desktop (default) or target_id window."""
     require_vm(vm_id)
     norm=_norm_target(target_id)
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         input_guard.require_clear(INPUT_PATH)
         await ensure_task_active(client)
         capture=_captures.pop(vm_id,None)
@@ -587,7 +587,7 @@ async def batch(vm_id:str,actions:list[dict],target_id:str='',stop_on_error:bool
     for item in actions:
         if not isinstance(item,dict) or not isinstance(item.get('action'),str):
             raise ValueError('Each batch entry must be a dict with an action string')
-    async with _lock,pooled_connection() as client:
+    async with _lock,pooled_connection(vm_id=vm_id) as client:
         if observed_result is not None:
             review_token=input_guard.observed(INPUT_PATH,norm)
             if review_token:input_guard.confirm(INPUT_PATH,norm,review_token,observed_result)
@@ -646,7 +646,7 @@ async def exec_powershell(vm_id:str,command:str,timeout_seconds:int=30,working_d
         raise ValueError('command must be a non-empty string')
     if type(timeout_seconds) is not int or not 1<=timeout_seconds<=300:
         raise ValueError('timeout_seconds must be an integer between 1 and 300')
-    async with _lock,pooled_connection(timeout=max(45.0,float(timeout_seconds)+15.0)) as client:
+    async with _lock,pooled_connection(timeout=max(45.0,float(timeout_seconds)+15.0),vm_id=vm_id) as client:
         await status_checked(client)
         return (await client.call_tool('ExecPowerShell',{
             'command':command,'timeout_seconds':timeout_seconds,'working_directory':working_directory,
