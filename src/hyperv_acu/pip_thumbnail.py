@@ -474,8 +474,13 @@ class PipThumbnailWindow:
 
     def _set_fade(self, target_alpha: int):
         target_alpha = max(0, min(255, target_alpha))
-        if target_alpha > 0 and self.hwnd and not win32gui.IsWindowVisible(self.hwnd):
-            win32gui.ShowWindow(self.hwnd, win32con.SW_SHOWNOACTIVATE)
+        if self.hwnd:
+            ex = win32gui.GetWindowLong(self.hwnd, win32con.GWL_EXSTYLE)
+            if not (ex & win32con.WS_EX_LAYERED):
+                win32gui.SetWindowLong(self.hwnd, win32con.GWL_EXSTYLE, ex | win32con.WS_EX_LAYERED)
+                win32gui.SetLayeredWindowAttributes(self.hwnd, 0, self._fade_alpha, win32con.LWA_ALPHA)
+            if target_alpha > 0 and not win32gui.IsWindowVisible(self.hwnd):
+                win32gui.ShowWindow(self.hwnd, win32con.SW_SHOWNOACTIVATE)
         if target_alpha == self._fade_to and (not self._fade_animating or self._fade_alpha == target_alpha):
             return
         self._fade_from = self._fade_alpha
@@ -501,6 +506,10 @@ class PipThumbnailWindow:
                 win32gui.SetLayeredWindowAttributes(self.hwnd, 0, self._fade_alpha, win32con.LWA_ALPHA)
                 if t >= 1.0 and self._fade_to == 0:
                     win32gui.ShowWindow(self.hwnd, win32con.SW_HIDE)
+                elif t >= 1.0 and self._fade_to == 255:
+                    ex = win32gui.GetWindowLong(self.hwnd, win32con.GWL_EXSTYLE)
+                    if ex & win32con.WS_EX_LAYERED:
+                        win32gui.SetWindowLong(self.hwnd, win32con.GWL_EXSTYLE, ex & ~win32con.WS_EX_LAYERED)
             if t >= 1.0:
                 self._fade_alpha = self._fade_to
                 self._fade_animating = False
@@ -884,12 +893,11 @@ class PipThumbnailWindow:
         atom = win32gui.RegisterClass(wc)
 
         x, y, w, h = self._target_rect()
-        ex_style = win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_NOACTIVATE | win32con.WS_EX_LAYERED
+        ex_style = win32con.WS_EX_TOPMOST | win32con.WS_EX_TOOLWINDOW | win32con.WS_EX_NOACTIVATE
         style = win32con.WS_POPUP | win32con.WS_VISIBLE
         self.hwnd = win32gui.CreateWindowEx(
             ex_style, atom, 'Hyper-V PiP', style, x, y, w, h, 0, 0, 0, None
         )
-        win32gui.SetLayeredWindowAttributes(self.hwnd, 0, 255, win32con.LWA_ALPHA)
         pref = ctypes.c_int(DWMWCP_ROUNDSMALL)
         dwmapi.DwmSetWindowAttribute(self.hwnd, DWMWA_WINDOW_CORNER_PREFERENCE, ctypes.byref(pref), ctypes.sizeof(pref))
         self._apply_region(x, y, w, h)
